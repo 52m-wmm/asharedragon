@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "asharedragon"
 version = "0.2.0"
 requires-python = ">=3.12"
-dependencies = ["fastapi>=0.115,<1", "uvicorn[standard]>=0.34,<1", "sqlalchemy>=2.0,<3", "alembic>=1.14,<2", "psycopg[binary]>=3.2,<4", "pydantic-settings>=2.7,<3", "pandas>=2.2,<4", "numpy>=2,<3", "akshare>=1.18", "tushare>=1.4,<2", "httpx>=0.28,<1", "baostock==0.9.4"]
+dependencies = ["fastapi>=0.115,<1", "uvicorn[standard]>=0.34,<1", "sqlalchemy>=2.0,<3", "alembic>=1.14,<2", "psycopg[binary]>=3.2,<4", "pydantic-settings>=2.7,<3", "pandas>=2.2,<4", "numpy>=2,<3", "akshare>=1.18", "tushare>=1.4,<2", "httpx>=0.28,<1", "baostock==0.9.4", "duckdb>=2.0,<3", "pyarrow>=26,<27", "exchange-calendars>=4,<5", "pytz>=2025.2", "scipy>=1.17,<2"]
 
 [project.optional-dependencies]
 test = ["pytest>=8,<10"]

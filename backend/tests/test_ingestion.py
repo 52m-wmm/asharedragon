@@ -92,7 +92,9 @@ def test_api_contract_and_point_in_time(db):
     app.dependency_overrides[get_db]=lambda:db
     try:
         with TestClient(app) as api:
-            r=api.get('/api/events',params={'trade_date':str(DATE)}).json();assert r['meta']['total']==1
+            candidate=api.get('/api/events',params={'trade_date':str(DATE)}).json()
+            assert candidate['meta']['total']==0 and candidate['meta']['purpose']=='trading'
+            r=api.get('/api/events',params={'trade_date':str(DATE),'purpose':'history'}).json();assert r['meta']['total']==1
             assert r['data'][0]['pe_ttm'] is None
             assert api.get('/api/events?trade_date=bad').status_code==422
             assert api.get('/api/events?trade_date=2024-01-03&page=0').status_code==422

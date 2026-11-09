@@ -60,3 +60,12 @@ webencodings==0.6.1
 websocket-client==1.9.2
 websockets==17.4
 xlrd==2.0.2
+duckdb==2.0.0
+pyarrow==26.0.1
+exchange-calendars==4.13.2
+korean_lunar_calendar==0.4.0
+pyluach==2.3.0
+toolz==1.2.0
+pytz==2026.6
+
+scipy==1.18.1

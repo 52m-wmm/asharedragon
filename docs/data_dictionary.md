@@ -54,3 +54,43 @@
 | reconstruction_validations | run_id + date + reference_raw_id | AKShare 对照指标、未覆盖、误报、漏报、连板差异及证据 JSON |
 
 重建表没有伪造的盘中观测；统一 API 中封板时间、次数、金额显式 NULL。月度统计不跨批次重复累加；研究需保存固定 run_id。
+
+## 最终研究发布 `research-final-v1`（2026-11-07）
+
+入口为仓库外 `~/Datasets/asharedragon/research/unified/manifest.json`。它原子指向一个不可变快照，快照内 `research.duckdb` 提供 Parquet 视图。所有文件有 SHA-256；`inputs.json` 记录输入路径和摘要，`archive_inventory.json` 记录本地 Tushare 归档。构建只读 PostgreSQL，不改源表。数据库文件中的 Parquet 路径绑定当前快照绝对位置；迁移机器后须用离线构建重新生成目录，不可只移动 DuckDB 文件。
+
+| 表/视图 | 主键或粒度 | 语义 |
+|---|---|---|
+| stock_daily | stock_code + trade_date | 年/月分区的统一日级表；stock_day_id=`day:代码:日期`；包含 OHLCV、事件摘要、估值、ST/交易状态、情绪引用、各用途质量 |
+| price_candidates / price_conflicts | 来源股票日 / 股票日 | 原价候选与冲突审计；不覆盖原始 Parquet |
+| events | event_id | 来源+接口+股票+日期+事件类型；保留 pg id/raw_id；日级选择仅是摘要，不能代替事件表 |
+| selected_events / event_conflicts | 股票日 | 决定日级事件摘要；相互矛盾的事件状态保持 unknown |
+| cycles | cycle_id | 最新 v0.5.6 的 8,309 个观测周期；完整周期与边界未知周期分开；不与 legacy_cycles 相加 |
+| streak_facts / cycle_days | fact_id / cycle_id+日期 | 同一最新周期的完整证据和逐日进程，非额外样本 |
+| labels | label_id | cycle_id + reached_5；复用已有五交易日结果定义；success/failure/unknown 与质量分别存储 |
+| first_board_samples | sample_id=`first:代码:日期` | 来源报告连板数为1的收盘首板样本；无未来结果字段，不等于所有样本首板边界均独立核验 |
+| sample_cycles / sample_labels | sample_id+cycle_id / sample_id+threshold | 样本与周期关联；无唯一周期结果时显式 unknown |
+| preboard_features | cycle_id | v0.6 已有首板前特征及 cutoff、缺失原因、来源；排除 outcome、未来高度和结果筛选标志；母体仍是既有完整周期，存在选择偏差 |
+| legacy_cycles | 原始旧版 cycle_id | 旧 v1 诊断结果，仅追溯，不能与最新周期混合计数 |
+| historical_stock_status / security_aliases | 有效期证据 / 身份有效期 | 保留原始多条证据；resolved_historical_status 经有效期与身份关联后合并，冲突不填状态 |
+| day_evidence | 股票日 | v0.5.6 优先、先前事实为补充；收盘状态证据独立于 ST 和数值涨停价 |
+| market_sentiment | sentiment_id | 来源+日期；日表仅关联选择的来源，不重复扩增股票日 |
+| pg_themes / pg_stock_themes | theme_id / pg id | 原有题材与有效期关系；目前空表，禁止用现有题材倒填历史 |
+| pg_stock_daily / pg_limitup_events / pg_raw_links | PostgreSQL 原 id | 本地一致性快照；`supplement_pg_id`、`event_id` 对应记录中的 id/raw_id 可回查原 PostgreSQL |
+| cross_qqq / cross_qqq_actions / cross_us_calendar | 原始美股粒度 | QQQ、公司行动和美股日历；不按同名日期强行连接 A 股 |
+| cross_aligned_diagnostics / cross_sentiment | 原跨市场研究粒度 | 保留既有诊断及可得时间约束，不扩展研究指标 |
+| yearly_coverage | year | 交易日期覆盖与已知生命周期股票日覆盖分别计算 |
+
+字段单位继承原规范：价格人民币元，成交量股，金额/市值/封单金额人民币元，换手率为百分数点；时间为上海本地板内时间，`*_utc` 为 UTC。PE TTM/PB 不由当前估值回填。`official_limit_up_price`、`official_limit_down_price` 没有独立数值证据即 NULL，不以收盘价冒充官方限价。
+
+来源优先级固定如下：
+
+- OHLCV 作为整组：已验货购买日线 > 已验货 AKShare 补充 Parquet > 本地 BaoStock > 本地 AKShare PostgreSQL。同层按固定来源名与最新记录选择；不同来源 OHLC 不一致记录到 price_conflicts，并降低该日价格质量。
+- 同源事件先取最新有记录的成功原始响应；摘要优先收盘涨停、跌停、炸板，再按 Tushare > AKShare。不同事件状态或独立收盘证据冲突，`is_limit_up=NULL`、`limit_quality=unknown`；连板高度冲突独立置空。
+- PE/PB 使用同日 BaoStock 优先的 PostgreSQL 补充。市值/换手率先补充日线，空值再用所选同日事件；通过 supplement_pg_id、supplement_raw_id、event_id、event_raw_id 和来源表逐字段追溯。无需丢弃其他有效字段。
+- ST/交易状态先使用按身份和日期合并的历史证据，再使用当日补充和状态快照；不按股票名称跨期推断。历史证据冲突保留 unknown。
+- 情绪按 Tushare > AKShare、同来源最新计算时间；数据不足的全市场解释仍为 diagnostic。
+
+质量按用途定义，不能互相替代：`price_quality=verified` 表示未复权 OHLCV 结构与来源一致性可用，不表示已复权收益可信；`limit_quality=verified` 表示该日收盘状态有直接来源或已审定证据，不表示拥有数值官方限价；`st_quality=verified` 仅针对当日 ST 事实。估值与情绪保留 diagnostic/unknown。标签 `verified` 仅在最新既有证据满足局部五交易日结果定义时使用，**不是全市场年度统计认证**；`formal_eligible` 仍为 false。
+
+首板收盘样本与 `preboard_features` 不混用：前者含首板日 EOD 字段，不能作为首板日盘前特征；后者仅保留既有 cutoff 之前的窗口，仍不证明供应商历史 PIT 发布版本。未来结果只在 labels/sample_labels，需显式连接。`outcome_known_at_utc` 是证据确认时间，不能倒填成首板可知信息。unknown 既不算 failure，也不进入已知结果成功率分母。

@@ -1,0 +1,50 @@
+{
+  "study_version": "dragon-seasonality-study-v1.1",
+  "unified_dataset": "snapshots/20261108T052941763243Z",
+  "unified_manifest_sha256": "00d0a65c3893f970dfe5d194396e0cffb54cccb41f495cdf866e66ba959fd118",
+  "outcome_policy": "existing study_v07.cycle_outcome on unified cycle facts",
+  "date_range": [
+    2017,
+    2026
+  ],
+  "data_end": "2026-11-06",
+  "height_thresholds": [
+    3,
+    5,
+    7,
+    10
+  ],
+  "promotion_threshold": 5,
+  "unknown_is_failure": false,
+  "month_basis": "exact first_board_date",
+  "windows": {
+    "march_may": [
+      3,
+      4,
+      5
+    ],
+    "sep_dec": [
+      9,
+      10,
+      11,
+      12
+    ],
+    "combined": [
+      3,
+      4,
+      5,
+      9,
+      10,
+      11,
+      12
+    ]
+  },
+  "bootstrap": {
+    "replicates": 1000,
+    "rate_seed": 600071,
+    "contrast_seed": 20261108
+  },
+  "confidence": 0.95,
+  "multiple_testing": "BH: 3 windows; separately 5 features",
+  "formal_population_eligible": false
+}

@@ -34,12 +34,16 @@ def dashboard(provider:Literal['akshare','tushare','baostock']='akshare',db:Sess
 
 @router.get('/events')
 def events(trade_date:date,provider:Literal['akshare','tushare','baostock']='akshare',
-           kind:Literal['up','broken','down']='up',search:str='',industry:str='',theme:str='',
+           kind:Literal['up','broken','down']='up',purpose:Literal['trading','history']='trading',search:str='',industry:str='',theme:str='',
            min_boards:int|None=Query(None,ge=1),min_cap:float|None=None,max_cap:float|None=None,
            min_turnover:float|None=None,max_pe:float|None=None,min_amount:float|None=None,
            sort:Literal['consecutive_limit_days','amount','turnover_rate','circulating_market_cap','first_limit_time','stock_code']='consecutive_limit_days',
            descending:bool=True,page:int=Query(1,ge=1),page_size:int=Query(30,ge=1,le=200),db:Session=Depends(get_db)):
     rows=[serialize(x) for x in latest_events(db,provider,trade_date,trade_date) if x.limit_type==kind]
+    candidate_meta=None
+    if purpose=='trading':
+        from app.research.st_research_scope import trading_candidates
+        rows,candidate_meta=trading_candidates(rows)
     if search: rows=[x for x in rows if search.lower() in (x['stock_code']+(x['stock_name'] or '')).lower()]
     if industry: rows=[x for x in rows if industry in (x['industry'] or '')]
     if theme:
@@ -52,7 +56,7 @@ def events(trade_date:date,provider:Literal['akshare','tushare','baostock']='aks
     rows=sorted(present,key=lambda x:(x[sort],x['stock_code']),reverse=descending)+missing
     status=db.scalar(select(Coverage).where(Coverage.provider==provider,Coverage.dataset==kind,Coverage.trade_date==trade_date))
     return ok(rows[(page-1)*page_size:page*page_size],total=len(rows),page=page,page_size=page_size,
-              coverage=serialize(status) if status else None,provider=provider)
+              coverage=serialize(status) if status else None,provider=provider,purpose=purpose,candidate_eligibility=candidate_meta)
 
 @router.get('/stocks/{code}')
 def stock(code:str,provider:Literal['akshare','tushare','baostock']='akshare',start:date|None=None,end:date|None=None,db:Session=Depends(get_db)):

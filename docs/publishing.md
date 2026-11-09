@@ -1,9 +1,20 @@
-# GitHub 发布范围
+# Publication boundary
 
-公开仓库仅包含项目源代码、依赖清单、迁移、人工构造的单元测试和说明文档。依赖包由包管理器另行安装，不将本地第三方包源码打包提交。
+This public repository contains source code, dependency manifests, migrations, tests, methodological documentation and aggregate research summaries. It does not grant redistribution rights to provider or purchased data.
 
-数据库、备份、原始响应、行情导出、截图及包含逐股行情证据的生成报告留在本机，不纳入 Git。未取得第三方行情再分发授权；免费访问接口不代表可公开再分发其数据。
+## Kept outside GitHub
 
-`docs/validation_v02.md`、`docs/validation_v02_metadata.json` 和 `docs/source_probe_metadata.json` 是本地生成物。README 中指向这些文件的链接需在本机采集并生成报告后查看；公共仓库不提供这些数据文件。数据库仍位于本机，忽略文件不会删除现有数据。
+- `.env`, tokens, passwords, private keys and authenticated proxy settings.
+- Purchased and provider market data, Parquet partitions, archives and raw API responses.
+- DuckDB/PostgreSQL databases, backups, exports and materialized research snapshots.
+- Stock-level study CSV/JSON outputs, raw evidence and unlicensed research datasets.
+- Virtual environments, dependency directories, caches, logs and temporary diagnostics.
+- Prior research screenshots containing market records.
 
-`.env.example` 仅提供无密码的本地连接示例，Token 留空。实际配置使用被忽略的 `.env`。提交前检查 `git diff --cached`；`.gitignore` 不会自动清除已经进入历史的敏感信息。
+Generated study folders under `docs/` are local-only. Public Markdown retains methods and aggregate conclusions; links to excluded outputs are labelled local-only rather than presented as downloadable public datasets. Private original report copies remain in the ignored `data/release_document_originals/` directory.
+
+The sole published screenshot, `docs/screenshots/homepage.png`, is an actual homepage captured with an unpopulated month selected. It contains no stock-level records or market-price plot. README explicitly states this context.
+
+`.env.example` contains blank optional credentials and a password-free localhost database URL. `.gitignore` only protects untracked files: it neither removes tracked content nor erases history. Release checks must inspect the Git index and historical blobs, not merely the working directory. Stop publication if an actual credential or prohibited dataset is found; do not silently rewrite shared history.
+
+No licensing claim is made for third-party data. Free API access is not permission to redistribute it. Do not run collection or reconstruction scripts solely to populate a public demonstration.

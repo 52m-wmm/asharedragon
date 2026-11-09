@@ -22,12 +22,16 @@ def main():
                 print(json.dumps(payload, ensure_ascii=False))
             return
         elif provider == 'tushare':
-            import tushare as ts
+            from app.providers.tushare_proxy import ProxyClient
             from app.core.config import settings
-            if not settings.tushare_token:
-                raise ValueError('TUSHARE_TOKEN 未配置')
-            df = ts.pro_api(settings.tushare_token, timeout=20).query(endpoint, **params)
-            version, signature = ts.__version__, 'query(api_name, fields="", **kwargs)'
+            client = ProxyClient(accept_http=settings.tushare_allow_http, max_requests=10)
+            try:
+                payload = client.fetch(endpoint, **params)
+            finally:
+                client.session.close()
+            with contextlib.redirect_stdout(sys.__stdout__):
+                print(json.dumps(payload, ensure_ascii=False))
+            return
         else:
             raise ValueError('Unsupported provider')
     print(json.dumps({'version':version,'signature':signature,'columns':list(df.columns),

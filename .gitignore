@@ -67,3 +67,34 @@ coverage/
 dist/
 build/
 .turbo/
+
+# Local third-party API probe report may contain licensed sample data
+/docs/tushare_probe.md
+/docs/tushare_month_validation.md
+/docs/tushare_v03_probe.md
+/docs/tushare_full_backfill.md
+
+# Purchased market archives and local historical import evidence
+*.zip
+*.7z
+*.rar
+*.duckdb
+*.duckdb.*
+*.parquet.partial
+
+# Publication boundary: local diagnostics and generated research artifacts
+.tmp/
+*.gz
+*.tar
+*.tgz
+/docs/dragon_research_final_review/
+/docs/dragon_seasonality_study_v1/
+/docs/dragon_streak_classification/
+/docs/historical_limit_statistics_v1/
+/docs/history_limits_v2/
+/docs/non_ipo_dragon_study/
+/docs/**/*.json
+/docs/**/*.png
+/docs/**/*.svg
+!/docs/screenshots/
+!/docs/screenshots/homepage.png

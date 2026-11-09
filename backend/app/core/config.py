@@ -5,6 +5,8 @@ ROOT = Path(__file__).resolve().parents[3]
 class Settings(BaseSettings):
     database_url: str = 'postgresql+psycopg://localhost/asharedragon'
     tushare_token: str = ''
+    tushare_api_url: str = ''
+    tushare_allow_http: bool = False
     request_timeout: int = 25
     request_retries: int = 2
     request_interval: float = 1.0

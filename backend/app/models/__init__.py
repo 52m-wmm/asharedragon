@@ -246,3 +246,43 @@ class ValidationReport(Base):
     result: Mapped[dict] = mapped_column(JSON)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
     __table_args__ = (UniqueConstraint('run_id','trade_date','reference_raw_id'),)
+
+# v0.3 proxy batches and partitions are independent of the v0.1 queue and facts.
+class ProxyBatch(Base):
+    __tablename__ = 'proxy_batches'
+    batch_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    source_id: Mapped[str] = mapped_column(String(16))
+    start_date: Mapped[date]
+    end_date: Mapped[date]
+    endpoints: Mapped[list] = mapped_column(JSON)
+    parameters: Mapped[dict] = mapped_column(JSON)
+    status: Mapped[str]
+    progress: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+class ProxyPartition(Base):
+    __tablename__ = 'proxy_partitions'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    source_id: Mapped[str] = mapped_column(String(16))
+    endpoint: Mapped[str]
+    trade_date: Mapped[date] = mapped_column(index=True)
+    parameters: Mapped[dict] = mapped_column(JSON)
+    parameter_hash: Mapped[str] = mapped_column(String(64))
+    batch_id: Mapped[str] = mapped_column(ForeignKey('proxy_batches.batch_id'))
+    status: Mapped[str]
+    raw_id: Mapped[int | None] = mapped_column(ForeignKey('raw_observations.id'))
+    row_count: Mapped[int | None]
+    attempts: Mapped[int] = mapped_column(default=0)
+    audit: Mapped[dict] = mapped_column(JSON, default=dict)
+    error_message: Mapped[str | None]
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=now)
+    __table_args__ = (UniqueConstraint('source_id','endpoint','trade_date','parameter_hash'),)
+
+class ProxyFact(Evidence, Base):
+    """Typed daily estimates and source-specific themes without sparse Daily overrides."""
+    __tablename__ = 'proxy_facts'
+    id: Mapped[int] = mapped_column(primary_key=True)
+    record_key: Mapped[str]
+    normalized: Mapped[dict] = mapped_column(JSON)
+    __table_args__ = (UniqueConstraint('endpoint','trade_date','record_key','raw_id'),)

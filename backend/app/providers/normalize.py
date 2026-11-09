@@ -4,7 +4,7 @@ from decimal import Decimal, InvalidOperation
 
 def stock_code(value):
     text = str(value).strip().upper()
-    match = re.fullmatch(r'(?:(SH|SZ|BJ))?(\d{6})(?:\.(SH|SZ|BJ))?', text)
+    match = re.fullmatch(r'(?:(SH|SZ|BJ)\.?)?(\d{6})(?:\.(SH|SZ|BJ))?', text)
     if not match: raise ValueError(f'Invalid A-share code: {text}')
     prefix, digits, suffix = match.groups()
     expected = 'SH' if digits.startswith('6') else 'SZ' if digits.startswith(('0','3')) else 'BJ' if digits.startswith(('4','8','92')) else None

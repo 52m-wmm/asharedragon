@@ -1,2 +1,2 @@
-import {Seasonality} from '@/components/Research';
-export default Seasonality;
+import {DragonCenter} from '@/components/Dragons';
+export default function Page(){return <DragonCenter seasonality/>}
