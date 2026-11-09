@@ -6,7 +6,7 @@ A local-first research workspace for historical A-share limit-up events, consecu
 
 ![AShareDragon historical limit-up homepage](docs/screenshots/homepage.png)
 
-*Actual homepage with an unpopulated month selected. No third-party market records are included in this public screenshot.*
+*Actual homepage showing aggregate historical limit-up counts, evidence categories, coverage and observed streak-height trends. Stock-level records and raw market data are not included in the screenshot.*
 
 ## What is implemented
 

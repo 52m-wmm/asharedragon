@@ -13,7 +13,7 @@ This public repository contains source code, dependency manifests, migrations, t
 
 Generated study folders under `docs/` are local-only. Public Markdown retains methods and aggregate conclusions; links to excluded outputs are labelled local-only rather than presented as downloadable public datasets. Private original report copies remain in the ignored `data/release_document_originals/` directory.
 
-The sole published screenshot, `docs/screenshots/homepage.png`, is an actual homepage captured with an unpopulated month selected. It contains no stock-level records or market-price plot. README explicitly states this context.
+The sole published screenshot, `docs/screenshots/homepage.png`, is an actual homepage showing aggregate counts, coverage and streak-height trends, published at the project owner’s request. It contains no stock-level records, price candles, raw responses or credentials. README explicitly states this context.
 
 `.env.example` contains blank optional credentials and a password-free localhost database URL. `.gitignore` only protects untracked files: it neither removes tracked content nor erases history. Release checks must inspect the Git index and historical blobs, not merely the working directory. Stop publication if an actual credential or prohibited dataset is found; do not silently rewrite shared history.
 

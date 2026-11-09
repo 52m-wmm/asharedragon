@@ -30,10 +30,14 @@ These tests used the existing PostgreSQL installation and authorized local snaps
 
 ## Screenshot
 
-The README embeds `docs/screenshots/homepage.png`, captured from the actual homepage at 1440×900 with December 2026 selected (outside the current snapshot). The selected list had zero stock rows and no daily metrics; there are no market-price records or populated market plots in the image. It was visually inspected before staging. This is an empty-month UI screenshot, not simulated market performance.
+The initial release embedded `docs/screenshots/homepage.png`, captured from the actual homepage at 1440×900 with December 2026 selected (outside the current snapshot). The selected list had zero stock rows and no daily metrics; there are no market-price records or populated market plots in the image. It was visually inspected before staging. This is an empty-month UI screenshot, not simulated market performance.
 
 ## Reproducibility and publication limits
 
 Source, migrations, tests and methodological summaries are shipped. Local `.env`, provider credentials, raw responses, licensed archives, Parquet/DuckDB files, PostgreSQL contents, generated row-level studies, cached images and execution logs are not shipped. Aggregate findings do not establish full-market independent verification or validated seasonality.
 
 The release commit hash and final remote verification are reported after the commit/push; this document does not claim success in advance.
+
+## Screenshot follow-up
+
+At the project owner’s request, the initial empty-month image was replaced with a 1600×1250 capture of the actual homepage showing aggregate counts, coverage and streak-height trends. Browser zoom was adjusted for framing; data and application code were unchanged. The image was visually inspected and contains no stock-level records, price candles, raw responses or credentials. Only the screenshot and its documentation changed; no business logic tests needed to be repeated.
