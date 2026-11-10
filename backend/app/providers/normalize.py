@@ -46,6 +46,8 @@ def event_ak(row, kind):
         total_market_cap=number(row.get('总市值')),circulating_market_cap=number(row.get('流通市值')))
 
 def daily_ak(row, code):
+    if row.get('股票代码') is not None and stock_code(str(row['股票代码']).zfill(6))!=stock_code(code):
+        raise ValueError('Returned symbol differs from request')
     result = dict(stock_code=stock_code(code),trade_date=day(row['日期']),adjustment='none')
     mapping = {'开盘':'open','最高':'high','最低':'low','收盘':'close','成交量':'volume','成交额':'amount',
         '换手率':'turnover_rate','振幅':'amplitude','涨跌幅':'pct_change'}
@@ -56,4 +58,9 @@ def daily_ak(row, code):
     if any(p is None or p<=0 for p in prices): raise ValueError('Missing/invalid OHLC')
     if result['high'] < max(result['open'],result['close'],result['low']) or result['low'] > min(result['open'],result['close']):
         raise ValueError('Inconsistent OHLC')
+    # Recover only from this response's change, never from a prior observed day.
+    change=number(row.get('涨跌额'));pct=result['pct_change']
+    reference=result['close']-change if change is not None else None
+    if reference is not None and reference>0 and pct is not None and reference==reference.quantize(Decimal('.01')) and abs(change/reference*100-pct)<=Decimal('.0051'):
+        result['pre_close']=reference
     return result

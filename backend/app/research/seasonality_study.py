@@ -10,6 +10,7 @@ from pathlib import Path
 import numpy as np
 from scipy.stats import fisher_exact, mannwhitneyu, false_discovery_control
 from app.research.unified import UnifiedResearch
+from app.research.queries import DEFAULT_ROOT
 from app.research.feature_study import board_context, distribution, cliffs, rate_summary
 from app.research.dragons import wilson
 from app.research.study_v07 import cycle_outcome
@@ -28,7 +29,7 @@ def records(db, sql):
 
 @lru_cache(maxsize=2)
 def load_release(snapshot):
-    with UnifiedResearch() as release:
+    with UnifiedResearch(dataset=str(Path(snapshot).relative_to(Path(DEFAULT_ROOT).resolve()/'research/unified'))) as release:
         db = release.db
         # Source-declared first boards plus exact-boundary cycles absent from the event sample table.
         direct = records(db, """SELECT s.stock_code, CAST(s.trade_date AS VARCHAR) first_board_date,
@@ -205,13 +206,14 @@ def validate_release(snapshot):
     lock=json.loads(Path(__file__).with_name('seasonality_study_v1_lock.json').read_text())
     path=Path(snapshot)
     if (path.parent.name!='snapshots' or 'snapshots/'+path.name!=lock['unified_dataset']
-        or hashlib.sha256((path.parent.parent/'manifest.json').read_bytes()).hexdigest()!=lock['unified_manifest_sha256']):
+        or hashlib.sha256((path/'manifest.json').read_bytes()).hexdigest()!=lock['unified_manifest_sha256']):
         raise ValueError('Frozen study input changed; explicit version review required')
     return lock
 
 
 def query(**filters):
-    with UnifiedResearch() as release:snapshot=str(release.path)
+    lock=json.loads(Path(__file__).with_name('seasonality_study_v1_lock.json').read_text())
+    snapshot=str(Path(DEFAULT_ROOT).resolve()/'research/unified'/lock['unified_dataset'])
     validate_release(snapshot)
     rows,coverage,meta=load_release(snapshot)
     return analyze(rows,coverage,meta,**filters)

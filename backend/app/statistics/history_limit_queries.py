@@ -15,8 +15,12 @@ def dataset():
  manifest=json.loads((ROOT/'manifest.json').read_text());path=(ROOT/manifest['dataset']).resolve()
  if not path.is_relative_to(ROOT):raise ValueError('Invalid statistics snapshot')
  db=duckdb.connect(config={'threads':2,'memory_limit':'512MB'})
- for name in ('positives','cycles','daily'):db.read_parquet(str(path/(name+'.parquet'))).create_view(name)
+ for name in ('positives','cycles','daily','days'):db.read_parquet(str(path/(name+'.parquet'))).create_view(name)
  meta=json.loads((path/'summary.json').read_text())
+ meta['availability']={
+  'daily_through':db.execute('SELECT max(trade_date) FROM daily WHERE daily_rows>0').fetchall()[0][0],
+  'confirmed_through':db.execute("SELECT max(trade_date) FROM positives WHERE status='confirmed'").fetchall()[0][0],
+ }
  classification_manifest=ROOT/'classification_manifest.json'
  if classification_manifest.exists():
   cm=json.loads(classification_manifest.read_text())
@@ -30,11 +34,39 @@ def dataset():
  finally:db.close()
 
 
+
+def intraday_series(db,start,end,mode):
+ # Aggregate the whole selected period once, using the same snapshot as the cards.
+ status=" AND status='confirmed'" if mode=='confirmed' else ''
+ return rows(db,"""WITH events AS (
+   SELECT DISTINCT stock_code,trade_date,limit_type FROM source_events WHERE trade_date BETWEEN ? AND ?
+ ), touched AS (
+   SELECT stock_code,trade_date FROM days WHERE trade_date BETWEEN ? AND ?
+     AND (up IS TRUE OR daily_shape='touch_unsealed')"""+status+"""
+   UNION SELECT stock_code,trade_date FROM events WHERE limit_type IN ('up','broken')
+ ), totals AS (
+   SELECT trade_date,count(*) touched FROM touched GROUP BY trade_date
+ ), negatives AS (
+   SELECT trade_date,nullif(count(DISTINCT stock_code) FILTER(WHERE limit_type='broken'),0) broken,
+    nullif(count(DISTINCT stock_code) FILTER(WHERE limit_type='down'),0) down
+   FROM events GROUP BY trade_date
+ ) SELECT coalesce(t.trade_date,n.trade_date) trade_date,t.touched,n.broken,n.down
+ FROM totals t FULL JOIN negatives n USING(trade_date) ORDER BY trade_date""",[start,end,start,end])
+
+
+def intraday_counts(db,day,mode):
+ result=intraday_series(db,day,day,mode)
+ return {k:result[0][k] if result else None for k in ('touched','broken','down')}
+
 def query(year=2026,month=None,trade_date=None,mode='all',height=1,view='daily',page=1,page_size=30,classification='all'):
  with dataset() as (db,meta):
   conditions=['year(trade_date)=?'];params=[year]
   if month:conditions.append('month(trade_date)=?');params.append(month)
   daily=rows(db,'SELECT * FROM daily WHERE '+' AND '.join(conditions)+' ORDER BY trade_date',params)
+  db.read_parquet(str(Path(meta['source_snapshot'])/'events.parquet')).create_view('source_events')
+  signals={r['trade_date']:r for r in intraday_series(db,daily[0]['trade_date'],daily[-1]['trade_date'],mode)} if daily else {}
+  for item in daily:
+   item.update({k:signals.get(item['trade_date'],{}).get(k) for k in ('touched','broken','down')})
   if trade_date and (trade_date.year!=year or month and trade_date.month!=month):raise ValueError('日期不在当前年月筛选范围')
   if view=='daily':
    chosen=trade_date or (daily[-1]['trade_date'] if daily else None)
@@ -60,7 +92,15 @@ def query(year=2026,month=None,trade_date=None,mode='all',height=1,view='daily',
    sql='SELECT * FROM '+source+' WHERE '+' AND '.join(wh);sort='height DESC,run_start DESC,stock_code'
   total=db.execute('SELECT count(*) FROM ('+sql+')',args).fetchone()[0]
   listing=rows(db,sql+' ORDER BY '+sort+' LIMIT ? OFFSET ?',args+[page_size,(page-1)*page_size])
-  return dict(daily=daily,samples=listing,total=total,page=page,page_size=page_size,selected_date=chosen,
+  intraday=None
+  if view=='daily' and chosen:
+   intraday={k:signals.get(chosen,{}).get(k) for k in ('touched','broken','down')}
+  touch_samples=[];touch_total=0
+  if view=='daily' and 'daily_shape' in [x[0] for x in db.execute('DESCRIBE days').fetchall()]:
+   touch_where="trade_date=? AND daily_shape='touch_unsealed'"+(" AND status='confirmed'" if mode=='confirmed' else '')
+   touch_total=db.execute('SELECT count(*) FROM days WHERE '+touch_where,[chosen]).fetchone()[0]
+   touch_samples=rows(db,'SELECT stock_code,stock_name,trade_date,st_status,status,high,close FROM days WHERE '+touch_where+' ORDER BY stock_code LIMIT 100',[chosen])
+  return dict(intraday=intraday,touch_samples=touch_samples,touch_total=touch_total,daily=daily,samples=listing,total=total,page=page,page_size=page_size,selected_date=chosen,
       yearly=meta['years'],meta={k:v for k,v in meta.items() if k not in ('years','cases','benchmark_exceptions')},mode=mode,view=view,classification=classification)
 
 

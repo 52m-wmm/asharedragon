@@ -27,7 +27,7 @@ def test_limit_rules():
     assert price('star',listing_session=3,registration_ipo=True) is None
     assert price(is_st=None) is None
     assert price(exceptional=True) is None
-    assert price(is_st=True,day=date(2026,1,1)) is None
+    assert price(is_st=True,day=date(2026,1,1)) == Decimal('10.55')
     assert price(official_price='11.07',exceptional=True)==Decimal('11.07')
     assert identify_limit('11.06','11.06','11.06')=='up'
     assert identify_limit('10.90','11.06','11.06')=='broken'

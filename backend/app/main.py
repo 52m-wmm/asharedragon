@@ -32,3 +32,6 @@ async def server_error(request:Request,exc:Exception):
 
 from app.api.history_limits import router as history_limits_router
 app.include_router(history_limits_router)
+
+from app.api.data_inventory import router as data_inventory_router
+app.include_router(data_inventory_router)

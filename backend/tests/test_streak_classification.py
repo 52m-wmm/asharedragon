@@ -27,7 +27,7 @@ def test_local_classification_dedup_counts_and_filters():
  with dataset() as (db,meta):
   if 'classification' not in meta:pytest.skip('Classification snapshot mismatch')
   c=meta['classification'];assert c['duplicate_keys']==0 and c['overlapping_cycles']==0
-  assert c['cycle_count']==c['unique_cycle_count']==117611
+  assert c['cycle_count']==c['unique_cycle_count']==db.execute('SELECT count(*) FROM cycles').fetchall()[0][0]
   for y in meta['years']:
    for h in [3,5,7,10]:
     assert sum(r['ge'+str(h)] for r in c['yearly'] if r['year']==y['year'])==sum(r['ge'+str(h)] for r in y['cycles'])

@@ -68,14 +68,17 @@ def test_streaks_never_bridge_unknown_or_missing_calendar_day():
 
 def test_real_snapshot_benchmarks_and_coverage():
  import pytest
+ from pathlib import Path
  from app.statistics.history_limit_queries import ROOT,dataset,query,candles
  if not (ROOT/'manifest.json').exists():pytest.skip('Local historical snapshot not installed')
  with dataset() as (db,meta):
-  assert meta['daily_target_rows']==10343963
+  with duckdb.connect(str(Path(meta['source_snapshot'])/'research.duckdb'),read_only=True) as source:
+   expected_rows=source.execute("SELECT count(*) FROM stock_daily WHERE price_quality='verified'").fetchone()[0]
+  assert meta['daily_target_rows']==expected_rows
   assert meta['benchmark_2020_dec']==dict(archive_events=1039,confirmed_matches=1039,excluded_or_unknown=0)
   assert db.execute('SELECT count(*)-count(distinct(stock_code,trade_date)) FROM positives').fetchone()[0]==0
   assert all(r['reconstructed_candidate']>0 for r in meta['years'])
-  assert sum(r['daily_rows'] for r in meta['years'])==10343963
+  assert sum(r['daily_rows'] for r in meta['years'])==expected_rows
   assert db.execute('SELECT count(*) FROM daily WHERE unknown<>unknown_observed+missing_catalogue_rows').fetchone()[0]==0
  for code,year,month,end,start,height in [('603178.SH',2023,10,'2023-10-25','2023-09-28',14),('603580.SH',2024,3,'2024-03-21','2024-03-05',13)]:
   result=query(year,month,date.fromisoformat(end),mode='confirmed',height=height)
@@ -102,3 +105,41 @@ def test_cycle_end_requires_next_calendar_day_negative():
  rr=sorted(rr,key=lambda r:r['trade_date'])
  assert rr[1]['exact_end'] is True
  assert rr[-1]['exact_end'] is False
+
+
+def test_daily_shapes_and_touch_exclude_ambiguous_st():
+ for fields,expected in [
+  (dict(open=11.,low=11.),'one_price'),
+  (dict(open=11.,low=10.8),'t_shape'),
+  (dict(open=10.,low=10.),'other_close_up'),
+  (dict(close=10.8),'touch_unsealed'),
+  (dict(close=10.8,high=10.9),'not_limit_up'),
+  (dict(open=None),'unknown'),
+  (dict(high=12.),'unknown'),
+ ]:
+  result=classify([day(is_st=False,**fields)])[0]
+  assert result['daily_shape']==expected
+ assert classify([day(close=10.8)])[0]['daily_shape']!='touch_unsealed'
+ assert classify([day(is_st=False,close=10.8,trade_status=False)])[0]['daily_shape']=='unknown'
+ # A current ST name does not overwrite the historical daily status.
+ result=classify([day(stock_name='ST样本',is_st=False)])[0]
+ assert result['st_status']=='confirmed_non_st' and result['up']
+
+
+def test_intraday_counts_deduplicate_sources_and_keep_missing_unknown():
+ from app.statistics.history_limit_queries import intraday_counts
+ with duckdb.connect() as db:
+  db.execute("CREATE TABLE source_events(stock_code VARCHAR,limit_type VARCHAR,trade_date DATE)")
+  db.execute("INSERT INTO source_events VALUES ('600001.SH','up','2026-11-09'),('600002.SH','broken','2026-11-09'),('600002.SH','broken','2026-11-09'),('600003.SH','down','2026-11-09')")
+  db.execute("CREATE TABLE days(stock_code VARCHAR,trade_date DATE,up BOOLEAN,daily_shape VARCHAR,status VARCHAR)")
+  db.execute("INSERT INTO days VALUES ('600001.SH','2026-11-09',true,'one_price','confirmed'),('600002.SH','2026-11-09',false,'touch_unsealed','confirmed'),('600004.SH','2026-11-09',true,'one_price','reconstructed_candidate')")
+  assert intraday_counts(db,date(2026,11,9),'all')==dict(touched=3,broken=1,down=1)
+  assert intraday_counts(db,date(2026,11,9),'confirmed')==dict(touched=2,broken=1,down=1)
+  assert intraday_counts(db,date(2026,11,10),'all')==dict(touched=None,broken=None,down=None)
+  from app.statistics.history_limit_queries import intraday_series
+  db.execute("INSERT INTO source_events VALUES ('600005.SH','down','2026-11-10')")
+  series=intraday_series(db,date(2026,11,9),date(2026,11,10),'all')
+  assert series==[
+   dict(trade_date=date(2026,11,9),touched=3,broken=1,down=1),
+   dict(trade_date=date(2026,11,10),touched=None,broken=None,down=1),
+  ]

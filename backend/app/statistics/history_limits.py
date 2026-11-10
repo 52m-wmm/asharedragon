@@ -2,18 +2,18 @@
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 
-VERSION='historical-limit-statistics-v2'
+from app.analytics.rules import regular_rates, rounded_limit_price, MAIN_ST_REFORM, CHINEXT_REFORM
+from app.analytics.reconstruction import board_for
+
+VERSION='historical-limit-statistics-v2.2'
 
 
 def rates(code,day,is_st):
-    if code.startswith('68') or (code.startswith('30') and day>=date(2020,8,24)):return [.20]
-    if not code.startswith(('00','60','30')):return []
-    if code.startswith(('00','60')) and day>=date(2026,7,6):return [.10]
-    return [.05] if is_st is True else [.10] if is_st is False else [.05,.10]
+    return [float(r) for r in regular_rates(board_for(code),day,is_st)] if not code.endswith('.BJ') else []
 
 
 def price(reference,rate):
-    p=Decimal(str(reference));return max(p+Decimal('.01'),(p*(1+Decimal(str(rate)))).quantize(Decimal('.01'),rounding=ROUND_HALF_UP))
+    return rounded_limit_price(reference,rate)
 
 
 def classification_sql():
@@ -21,7 +21,7 @@ def classification_sql():
     Source day evidence can confirm facts without formal research eligibility.
     SQL decimals implement the same tick calculation as price().
     """
-    return """
+    return f"""
     WITH context AS (
       SELECT *, CASE WHEN starts_with(stock_code,'68') THEN 'star'
          WHEN starts_with(stock_code,'30') THEN 'chinext'
@@ -31,13 +31,13 @@ def classification_sql():
          lag(trade_status) OVER w previous_trade_status
       FROM input WINDOW w AS (PARTITION BY stock_code ORDER BY trade_date)
     ), rules AS (
-      SELECT *, CASE WHEN board='star' OR (board='chinext' AND trade_date>=DATE '2020-08-24') THEN 20
-           WHEN board='main' AND trade_date>=DATE '2026-07-06' THEN 10
+      SELECT *, CASE WHEN board='star' OR (board='chinext' AND trade_date>=DATE '{CHINEXT_REFORM.isoformat()}') THEN 20
+           WHEN board='main' AND trade_date>=DATE '{MAIN_ST_REFORM.isoformat()}' THEN 10
            WHEN is_st IS TRUE THEN 5 ELSE 10 END rate_percent,
-        (is_st IS NULL AND (board='main' AND trade_date<DATE '2026-07-06' OR board='chinext' AND trade_date<DATE '2020-08-24')) ambiguous_st,
+        (is_st IS NULL AND (board='main' AND trade_date<DATE '{MAIN_ST_REFORM.isoformat()}' OR board='chinext' AND trade_date<DATE '{CHINEXT_REFORM.isoformat()}')) ambiguous_st,
         CASE WHEN board='other' OR session_index IS NULL THEN 'outside_board_or_calendar'
           WHEN listing_date IS NULL OR trade_date<listing_date OR (delisting_date IS NOT NULL AND trade_date>delisting_date) THEN 'lifecycle_unknown_or_outside'
-          WHEN (board='star' OR board='chinext' AND listing_date>=DATE '2020-08-24' OR board='main' AND listing_date>=DATE '2023-04-10')
+          WHEN (board='star' OR board='chinext' AND listing_date>=DATE '{CHINEXT_REFORM.isoformat()}' OR board='main' AND listing_date>=DATE '2023-04-10')
             AND listing_session BETWEEN 1 AND 5 THEN 'ipo_no_limit_first_five'
           WHEN (stock_code='000995.SZ' AND trade_date=DATE '2020-12-16') OR (stock_code='000792.SZ' AND trade_date=DATE '2021-08-10') THEN 'known_resumption_no_limit'
           WHEN event_conflict OR price_conflict OR status_conflict THEN 'source_conflict'
@@ -77,12 +77,24 @@ def classification_sql():
         WHEN st_status='unknown' THEN 'regime_candidate_st_still_unknown'
         ELSE 'dated_regime_candidate' END reason
       FROM limits
-    ) SELECT stock_code,stock_name,trade_date,session_index,close,pre_close,board,st_status,up,
+    ) SELECT stock_code,stock_name,trade_date,session_index,open,high,low,close,pre_close,board,st_status,up,
       CASE WHEN up IS NULL THEN 'unknown' WHEN reason IN ('direct_event_or_existing_day_evidence','trusted_historical_limit_price') THEN 'confirmed' ELSE 'reconstructed_candidate' END status,
       reason, CASE WHEN reason='trusted_historical_limit_price' THEN official_limit_up_price
         WHEN reason='direct_event_or_existing_day_evidence' THEN NULL
         WHEN ambiguous_st AND abs(close-st_price)<.000001 AND high<=st_price+.000001 THEN st_price ELSE derived_price END limit_price,
       CASE WHEN ambiguous_st AND abs(close-st_price)<.000001 AND high<=st_price+.000001 THEN 5 ELSE rate_percent END candidate_rate_percent,
+      CASE WHEN up IS NULL OR price_quality<>'verified' OR open IS NULL OR high IS NULL OR low IS NULL OR close IS NULL
+          OR NOT (isfinite(open) AND isfinite(high) AND isfinite(low) AND isfinite(close))
+          OR low<=0 OR low>least(open,close) OR high<greatest(open,close) THEN 'unknown'
+        WHEN up IS TRUE AND abs(high-close)>.000001 THEN 'unknown'
+        WHEN up IS TRUE AND abs(low-close)<.000001 THEN 'one_price'
+        WHEN up IS TRUE AND abs(open-close)<.000001 AND low<close THEN 't_shape'
+        WHEN up IS TRUE THEN 'other_close_up'
+        WHEN up IS FALSE AND hard_unknown IS NULL AND
+          ((official_limit_up_price>0 AND abs(high-official_limit_up_price)<.000001 AND close<official_limit_up_price)
+           OR (official_limit_up_price IS NULL AND rebuild_unknown IS NULL AND NOT ambiguous_st AND abs(high-derived_price)<.000001 AND close<derived_price))
+          THEN 'touch_unsealed'
+        ELSE 'not_limit_up' END daily_shape,
       (price_quality='verified') daily_present,event_source,consecutive_limit_days vendor_height,
       CASE WHEN reference_recovered THEN 'raw_close_minus_change_pct_checked' WHEN pre_close>0 THEN 'source_same_day_pre_close_not_lag_fill' ELSE 'missing' END reference_basis
     FROM judged

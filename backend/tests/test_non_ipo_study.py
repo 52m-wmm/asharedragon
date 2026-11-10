@@ -6,7 +6,8 @@ pytestmark=pytest.mark.skipif(not (ROOT/'classification_manifest.json').exists()
 def test_yearly_conservation_and_evidence_partition():
  s=study()
  assert len(s['yearly'])==10
- assert sum(r['source_segments'] for r in s['yearly'])==117611
+ with dataset() as (db,meta):
+  assert sum(r['source_segments'] for r in s['yearly'])==db.execute('SELECT count(*) FROM cycles').fetchall()[0][0]
  for r in s['yearly']:
   assert r['source_segments']==r['non_ipo']+r['ipo_excluded']+r['ipo_unknown']
   assert r['non_ipo']==r['trusted_start']+r['start_unknown']

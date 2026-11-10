@@ -14,7 +14,7 @@
 | 注册制创业板IPO | 2020-08-24起注册制首批上市；IPO前5个交易日不设涨跌幅 | [深交所2020-08-21发布会](https://www.szse.cn/aboutus/trends/conference/t20200821_580925.html)，其中次日至第五日简称C标识用于提示不设限制 |
 | 注册制主板IPO | 2023-04-10起新制度，IPO前5个交易日不设涨跌幅，之后常规10% | [深交所官方2023业务运行材料](https://www.szse.cn/www/marketServices/technicalservice/doc/P020230724535729507237.pdf)、[深交所2023投教问答](https://www.szse.cn/www/investor/index/update/t20230510_600325.html) |
 
-**2025-06-27是征求意见/技术准备日期，不是ST比例变更生效日。** 深交所当天通知使用“拟调整”并说明择机实施；上交所同期文件为征求意见稿。因此不能从此日直接将主板ST改为10%。现有兼容函数在此日起返回unknown是较早的保守边界，不是正确的制度变更日期；现有重建函数中的2026-07-06与本轮官方证据一致。[深交所技术准备通知](https://www.szse.cn/marketServices/technicalservice/notice/t20250627_614645.html)、[上交所征求意见通知](https://www.sse.com.cn/lawandrules/publicadvice/c/c_20250627_10783198.shtml)。
+**2025-06-27是征求意见/技术准备日期，不是ST比例变更生效日。** 深交所当天通知使用“拟调整”并说明择机实施；上交所同期文件为征求意见稿。因此不能从此日直接将主板ST改为10%。公共规则已统一为按生效日期选择比例：主板ST在2026-07-06前5%、当日起10%；此前兼容函数从征求意见日起返回unknown的旧边界已移除。价格取整和Python重建共用规则模块，历史统计SQL引用相同生效日期。[深交所技术准备通知](https://www.szse.cn/marketServices/technicalservice/notice/t20250627_614645.html)、[上交所征求意见通知](https://www.sse.com.cn/lawandrules/publicadvice/c/c_20250627_10783198.shtml)。
 
 上交所2023发布页面的元数据“生效日期”列写2023-02-17，但通知正文明确随首只注册制主板股票上市首日起施行。不能仅抓页面发布日期推断IPO规则切换日；深交所业务运行材料明确实际落地为2023-04-10。
 

@@ -135,3 +135,40 @@ def test_dashboard_calendar_gaps_are_null(db):
             assert by_date['2024-01-03']['limit_up_count']==1
             assert by_date['2024-01-02']['limit_up_count'] is None
     finally:app.dependency_overrides.clear()
+
+
+def test_repair_only_missing_partitions_and_skip_success(db):
+    from app.collectors.repair import plan_pool_repairs, repair_pools
+    calendar(db)
+    ingest_pool(db,FixtureProvider(),DATE,'up')
+    plan=plan_pool_repairs(db,DATE,DATE)
+    assert plan==[{'trade_date':DATE,'kinds':['broken','down']}]
+    class Recording(FixtureProvider):
+        calls=[]
+        def fetch(self,endpoint,**params):
+            self.calls.append(endpoint)
+            return super().fetch(endpoint,**params)
+    client=Recording()
+    results=repair_pools(db,DATE,DATE,client=client)
+    assert results[0]['status']=='success'
+    assert client.calls==['stock_zt_pool_zbgc_em','stock_zt_pool_dtgc_em']
+    assert repair_pools(db,DATE,DATE,client=client)==[]
+
+
+def test_repair_failure_stays_missing(db):
+    from app.collectors.repair import repair_pools,plan_pool_repairs
+    calendar(db)
+    results=repair_pools(db,DATE,DATE,kinds=['up'],client=FixtureProvider(error='network failure'))
+    assert results[0]['status']=='failed'
+    assert plan_pool_repairs(db,DATE,DATE,kinds=['up'])==[{'trade_date':DATE,'kinds':['up']}]
+
+
+def test_daily_reference_uses_same_response_and_checks_symbol():
+    from app.providers.normalize import daily_ak
+    from decimal import Decimal
+    import pytest
+    row={'日期':'2026-11-09','股票代码':'000001','开盘':10,'最高':11,'最低':10,'收盘':11,'成交量':100,'成交额':105000,'涨跌额':1,'涨跌幅':10}
+    assert daily_ak(row,'000001.SZ')['pre_close']==Decimal('10')
+    assert 'pre_close' not in daily_ak(dict(row,涨跌幅=5),'000001.SZ')
+    with pytest.raises(ValueError,match='symbol'):
+        daily_ak(row,'000002.SZ')

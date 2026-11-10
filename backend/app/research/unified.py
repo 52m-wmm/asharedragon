@@ -7,10 +7,10 @@ from app.research.queries import DEFAULT_ROOT
 
 
 class UnifiedResearch:
-    def __init__(self, root=DEFAULT_ROOT):
+    def __init__(self, root=DEFAULT_ROOT, *, dataset=None):
         base = Path(root).resolve() / 'research/unified'
         manifest = json.loads((base / 'manifest.json').read_text())
-        self.path = (base / manifest['dataset']).resolve()
+        self.path = (base / (dataset or manifest['dataset'])).resolve()
         if not self.path.is_relative_to(base):
             raise ValueError('Research snapshot escaped root')
         self.summary = json.loads((self.path / 'summary.json').read_text())

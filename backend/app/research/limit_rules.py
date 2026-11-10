@@ -6,7 +6,9 @@ from datetime import date
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from app.analytics.reconstruction import board_for
 
-VERSION = 'historical-l1-v1.1'
+from app.analytics.rules import regular_rates, rounded_limit_price
+
+VERSION = 'historical-l1-v1.2'
 RULE_END = date(2026, 11, 7)
 FACTOR_POLICY = {
     'adj_factor': 'quarantined_unverified',
@@ -107,19 +109,16 @@ def reconstruct(row, evidence, *, diagnostic=False):
         if state == 'legacy_non_reform':
             if board != 'main': return out('unknown', 'non_reform_board_conflict')
             rate = Decimal('.05')
-        elif board == 'star' or (board == 'chinext' and day >= date(2020,8,24)):
-            rate = Decimal('.20')
-        elif board == 'main' and day >= date(2026,7,6):
-            rate = Decimal('.10')
         else:
-            if is_st is None: return out('unknown', 'historical_st_missing')
-            rate = Decimal('.05') if is_st else Decimal('.10')
+            options = regular_rates(board,day,is_st)
+            if len(options) != 1: return out('unknown', 'historical_st_missing')
+            rate = options[0]
         if not need(evidence.get('reference_verified') is True, 'ex_reference_unverified'):
             return out('unknown', 'ex_reference_unverified')
         pre = number(row.get('pre_close'))
         if pre is None or pre != pre.quantize(Decimal('.01')):
             return out('unknown', 'invalid_ex_reference')
-        price = max(pre+Decimal('.01'), (pre*(1+rate)).quantize(Decimal('.01'), rounding=ROUND_HALF_UP))
+        price = rounded_limit_price(pre,rate)
     if high > price: return out('unknown', 'ohlc_exceeds_limit')
     return out('up' if close == price else 'not_up', 'official_limit' if values else 'derived_limit', price, rate)
 

@@ -1,2 +1,2 @@
-import {DataManagement} from '@/components/Research';
-export default DataManagement;
+import DataInventory from '@/components/DataInventory';
+export default DataInventory;

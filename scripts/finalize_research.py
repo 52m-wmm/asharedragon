@@ -1,5 +1,5 @@
 """Offline, immutable research release. Only SELECTs against local PostgreSQL."""
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 import argparse
 import fcntl
@@ -35,9 +35,16 @@ def outcome(value):
     return 'success' if value is True else 'failure' if value is False else 'unknown'
 
 
-def build(root=DEFAULT_ROOT):
+def build(root=DEFAULT_ROOT, end=None):
+    from app.services.calendar import completed_date
     root = Path(root).resolve()
     target = root / 'research/unified'
+    if end is None:
+        current=json.loads((target/'manifest.json').read_text())
+        current_path=(target/current['dataset']).resolve()
+        if not current_path.is_relative_to(target):raise ValueError('Invalid snapshot path')
+        end=date.fromisoformat(json.loads((current_path/'summary.json').read_text())['data_end'])
+    if end>completed_date():raise ValueError('截止日尚未收盘')
     stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
     out = target / 'snapshots' / stamp
     out.mkdir(parents=True)
@@ -65,12 +72,16 @@ def build(root=DEFAULT_ROOT):
     with engine.connect() as conn, conn.begin():
         conn.execute(text('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY'))
         pg_snapshot = conn.execute(text('select txid_current_snapshot()::text')).scalar()
+        calendar = pd.read_sql(text("SELECT DISTINCT trade_date FROM trading_days WHERE exchange='SSE' AND trade_date<=:end ORDER BY trade_date"),conn,params={'end':end})
+        if calendar.empty or calendar.iloc[-1]['trade_date'] != end:
+            raise ValueError('截止日不在本地交易日历中')
+        pq.write_table(pa.Table.from_pandas(calendar,preserve_index=False),out/'calendar.parquet',compression='zstd')
         for name in ('stock_daily', 'limitup_events', 'market_sentiment_daily', 'themes', 'stock_themes', 'data_coverage'):
             frame = pd.read_sql(text('SELECT * FROM ' + name), conn)
             pq.write_table(pa.Table.from_pandas(frame, preserve_index=False), out / ('pg_' + name + '.parquet'), compression='zstd')
         frame = pd.read_sql(text('SELECT id,provider,endpoint,trade_date,fetched_at,ingestion_status FROM raw_observations'), conn)
         pq.write_table(pa.Table.from_pandas(frame, preserve_index=False), out / 'pg_raw_links.parquet', compression='zstd')
-    for name in ('calendar', 'stocks', 'status_evidence'):
+    for name in ('stocks', 'status_evidence'):
         copy(root / f'research/{name}.parquet', name)
     facts_dir = snapshot('research/dragon_facts')
     cycles_dir = snapshot('research/dragon_v1')
@@ -186,7 +197,7 @@ def build(root=DEFAULT_ROOT):
                 AND c.trade_date>=a.valid_from AND (a.valid_to IS NULL OR c.trade_date<=a.valid_to)
             WHERE h.verification_status='source_observed' GROUP BY 1,2""")
         # Keep all purpose-specific states; missing PE never invalidates OHLCV.
-        sql = """SELECT k.stock_code,k.trade_date,year(k.trade_date)::INT AS year,month(k.trade_date)::INT AS month,
+        sql = f"""SELECT k.stock_code,k.trade_date,year(k.trade_date)::INT AS year,month(k.trade_date)::INT AS month,
             'day:'||k.stock_code||':'||k.trade_date AS stock_day_id,
             p.open,p.high,p.low,p.close,p.volume,p.amount,p.pre_close,p.source AS price_source,
             p.pg_daily_id, v.id AS supplement_pg_id, v.raw_id AS supplement_raw_id,
@@ -228,7 +239,7 @@ def build(root=DEFAULT_ROOT):
             LEFT JOIN day_evidence f USING(stock_code,trade_date)
             LEFT JOIN price_conflicts pc USING(stock_code,trade_date)
             LEFT JOIN selected_sentiment m USING(trade_date)
-            WHERE k.trade_date BETWEEN DATE '2017-01-01' AND DATE '2026-11-06'"""
+            WHERE k.trade_date BETWEEN DATE '2017-01-01' AND DATE '{end.isoformat()}'"""
         print('Writing partitioned stock-day dataset', flush=True)
         db.execute(f"COPY ({sql}) TO {literal(out / 'stock_daily')} (FORMAT PARQUET,PARTITION_BY(year,month),COMPRESSION ZSTD)")
         db.read_parquet(str(out / 'stock_daily/**/*.parquet'), hive_partitioning=True).create_view('stock_daily')
@@ -244,22 +255,22 @@ def build(root=DEFAULT_ROOT):
             FROM first_board_samples s CROSS JOIN (VALUES (5)) t(threshold)
             LEFT JOIN sample_cycles sc USING(sample_id)
             LEFT JOIN labels l ON l.cycle_id=sc.cycle_id AND l.threshold=t.threshold GROUP BY 1,2""")
-        export('yearly_coverage', """WITH obs AS (SELECT year,count(*) AS rows,count(close) AS price_rows,
+        export('yearly_coverage', f"""WITH obs AS (SELECT year,count(*) AS rows,count(close) AS price_rows,
             count(DISTINCT trade_date) FILTER(WHERE close IS NOT NULL) AS observed_days FROM stock_daily GROUP BY 1),
             exp AS (SELECT year(trade_date) AS year,count(*) AS expected_days FROM calendar
-                WHERE trade_date BETWEEN DATE '2017-01-01' AND DATE '2026-11-06' GROUP BY 1),
+                WHERE trade_date BETWEEN DATE '2017-01-01' AND DATE '{end.isoformat()}' GROUP BY 1),
             pairs AS (SELECT year(c.trade_date) AS year,count(*) AS expected_stock_sessions,
                 count(d.close) AS matched_stock_sessions FROM calendar c JOIN stocks s
                 ON c.trade_date>=s.listing_date AND (s.delisting_date IS NULL OR c.trade_date<=s.delisting_date)
                 LEFT JOIN stock_daily d ON d.stock_code=s.stock_code AND d.trade_date=c.trade_date
-                WHERE c.trade_date BETWEEN DATE '2017-01-01' AND DATE '2026-11-06' GROUP BY 1)
+                WHERE c.trade_date BETWEEN DATE '2017-01-01' AND DATE '{end.isoformat()}' GROUP BY 1)
             SELECT *,observed_days*1.0/expected_days AS date_coverage,
                 matched_stock_sessions*1.0/expected_stock_sessions AS known_catalogue_coverage
             FROM exp LEFT JOIN obs USING(year) LEFT JOIN pairs USING(year) ORDER BY year""")
         columns = ['open','high','low','close','volume','amount','pre_close','is_limit_up','consecutive_limit_days',
             'total_market_cap','circulating_market_cap','pe_ttm','pb','turnover_rate','first_limit_time','open_times',
             'seal_amount','official_limit_up_price','official_limit_down_price','is_st','trade_status','limit_up_count']
-        summary = {'version': VERSION, 'built_at_utc': stamp, 'data_end': '2026-11-06', 'postgres_snapshot': pg_snapshot,
+        summary = {'version': VERSION, 'built_at_utc': stamp, 'data_end': end.isoformat(), 'postgres_snapshot': pg_snapshot,
             'rows': r.query('SELECT count(*) n FROM stock_daily')[0]['n'],
             'yearly': r.query('SELECT * FROM yearly_coverage'),
             'counts': r.query("""SELECT count(*) FILTER(WHERE is_limit_up AND limit_quality='verified') confirmed_limit_up,
@@ -276,7 +287,7 @@ def build(root=DEFAULT_ROOT):
                 'Historical download time does not certify point-in-time availability; first-board features are EOD',
                 'Adjustment factors not certified; no formal total-return/backtest use',
                 'No independent A-share index price dataset found; QQQ is preserved separately',
-                'Historical theme relationships absent; BSE out of scope; 2026 ends 2026-11-06',
+                f'Historical theme relationships absent; BSE out of scope; data ends {end}',
                 'Known lifecycle catalogue coverage is not proof of full-market completeness']}
         if r.query('SELECT count(*) n FROM (SELECT stock_code,trade_date FROM stock_daily GROUP BY ALL HAVING count(*)>1)')[0]['n']:
             raise ValueError('Duplicate normalized primary key')
@@ -303,9 +314,10 @@ def build(root=DEFAULT_ROOT):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--root', type=Path, default=DEFAULT_ROOT)
+    parser.add_argument('--end', type=date.fromisoformat, help='截止交易日；默认保留当前快照截止日')
     args = parser.parse_args()
     lock = args.root / 'research/unified/build.lock'
     lock.parent.mkdir(parents=True, exist_ok=True)
     with lock.open('a') as handle:
         fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        build(args.root)
+        build(args.root,args.end)

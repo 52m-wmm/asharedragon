@@ -143,9 +143,11 @@ def run_job(db,job_id,client=None):
             job.rows_received+=received;job.rows_inserted+=inserted
             if error: errors.append(error)
         elif job.dataset=='pools':
+            from app.collectors.repair import pool_kinds
+            kinds=pool_kinds(job.parameters.get('kinds'))
             dates=sessions(db,job.start_date,job.end_date)
             for date in dates:
-                for kind in AK_ENDPOINTS:
+                for kind in kinds:
                     received,inserted,error=ingest_pool(db,client,date,kind,job.job_id,job.parameters.get('force',False))
                     job.rows_received+=received;job.rows_inserted+=inserted
                     if error: errors.append(f'{date} {kind}: {error}')

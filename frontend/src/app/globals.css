@@ -13,3 +13,5 @@
 .seasonality-study button[aria-pressed=true],.filters[role=tablist] button[aria-selected=true]{background:#203e3c;border-color:#67bdad;color:#a8ead9}
 .seasonality-study .heatmap button{min-width:36px;padding:7px}
 @media(max-width:750px){.seasonality-study .panel>p,.seasonality-study .panel>h3{margin-left:14px;margin-right:14px}.seasonality-study .filters[aria-label="月份联动"]{gap:8px}.seasonality-study .panel-head{align-items:flex-start}}
+
+.kline-link{display:inline-block;padding:8px 12px;border:1px solid #3b806d;border-radius:5px;background:#17392f;color:#8fe3c5;white-space:nowrap}.kline-link:hover{background:#20503f}.kline-link:focus-visible{outline:2px solid #8fe3c5;outline-offset:3px}.daily-signals .metric>span{display:block;line-height:1.6}.daily-signals .metric strong.green{color:#53c8a6}.daily-signals .metric strong.red{color:#ed7f85}

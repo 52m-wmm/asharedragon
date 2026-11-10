@@ -12,7 +12,9 @@ def save(path,x):path.write_text(json.dumps(x,ensure_ascii=False,indent=2,defaul
 def records(db,sql):
  c=db.execute(sql);return [dict(zip([x[0] for x in c.description],r)) for r in c.fetchall()]
 def build():
- with UnifiedResearch() as u:source=u.path
+ with UnifiedResearch() as u:
+  source=u.path
+  data_end=u.summary['data_end']
  key=hashlib.sha256((str(source)+Path('backend/app/statistics/history_limits.py').read_text()+Path(__file__).read_text()+Path('backend/app/statistics/reference_recovery.py').read_text()).encode()).hexdigest()[:20]
  out=ROOT/'snapshots'/key;out.mkdir(parents=True,exist_ok=True)
  db=duckdb.connect(config={'memory_limit':'2GB','threads':4});db.execute(f"SET temp_directory='{out}/tmp'")
@@ -31,7 +33,8 @@ def build():
      LEFT JOIN cal c ON c.trade_date=d.trade_date LEFT JOIN cal l ON l.trade_date=s.listing_date""")
  print('Classifying all existing daily rows',flush=True)
  db.execute('CREATE TEMP TABLE days AS '+classification_sql())
- assert db.execute('SELECT count(*) FROM days WHERE daily_present').fetchone()[0]==10343963
+ target_rows=db.execute("SELECT count(*) FROM input WHERE price_quality='verified'").fetchone()[0]
+ assert db.execute('SELECT count(*) FROM days WHERE daily_present').fetchone()[0]==target_rows
  assert db.execute('SELECT count(*)-count(distinct (stock_code,trade_date)) FROM days').fetchone()[0]==0
  recovery['joined_references']=db.execute('SELECT count(*) FROM input WHERE reference_recovered').fetchone()[0]
  recovery['outcomes']=records(db,"SELECT status,up,reason,count(*) n FROM days WHERE reference_basis='raw_close_minus_change_pct_checked' GROUP BY ALL ORDER BY n DESC")
@@ -49,10 +52,10 @@ def build():
    CASE WHEN arg_max(exact_end,trade_date) THEN max(trade_date) END cycle_end_date,
    CASE WHEN min(first_board_date) IS NOT NULL AND arg_max(exact_end,trade_date) THEN max(height) END final_height FROM positives GROUP BY stock_code,run_start""")
  db.execute(f"COPY cycles TO '{out}/cycles.parquet' (FORMAT PARQUET,COMPRESSION ZSTD)")
- db.execute("""CREATE TEMP TABLE daily AS WITH expected AS (
+ db.execute(f"""CREATE TEMP TABLE daily AS WITH expected AS (
    SELECT c.trade_date,count(*) expected_stock_days,count(*) FILTER(WHERE d.stock_code IS NULL) missing_catalogue_rows FROM cal c JOIN src.stocks s ON c.trade_date>=s.listing_date AND (s.delisting_date IS NULL OR c.trade_date<=s.delisting_date)
    LEFT JOIN days d ON d.stock_code=s.stock_code AND d.trade_date=c.trade_date
-   WHERE c.trade_date BETWEEN '2017-01-01' AND '2026-11-06' GROUP BY c.trade_date
+   WHERE c.trade_date BETWEEN '2017-01-01' AND '{data_end}' GROUP BY c.trade_date
  ), observed AS (
    SELECT trade_date,count(*) observed_rows,count(*) FILTER(WHERE daily_present) daily_rows,
     count(*) FILTER(WHERE status='confirmed' AND up) confirmed,
@@ -90,7 +93,7 @@ def build():
  cases=records(db,"""SELECT stock_code,trade_date,status,height,run_start,first_board_date,confirmed_height FROM positives WHERE
     (stock_code='603178.SH' AND trade_date BETWEEN '2023-09-28' AND '2023-10-25') OR
     (stock_code='603580.SH' AND trade_date BETWEEN '2024-03-05' AND '2024-03-21') ORDER BY stock_code,trade_date""")
- save(out/'summary.json',dict(version=VERSION,source_snapshot=str(source),daily_target_rows=10343963,data_end='2026-11-06',years=years,
+ save(out/'summary.json',dict(version=VERSION,source_snapshot=str(source),daily_target_rows=target_rows,data_end=data_end,years=years,
      benchmark_2020_dec=bench,benchmark_exceptions=missing,cases=cases,
      coverage_basis='known lifecycle catalogue; observed stock-days and unknown missing grid rows separated',
      reference_policy='source pre_close or raw close-change with pct/OHLC consistency; observed breaks stay unknown; no lag fill',reference_recovery=recovery,

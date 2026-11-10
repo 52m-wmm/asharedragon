@@ -2,7 +2,9 @@
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 
-VERSION = 'baostock-close-v2.0'
+from app.analytics.rules import regular_rates, rounded_limit_price
+
+VERSION = 'baostock-close-v2.1'
 UNKNOWN = {'unknown', 'missing'}
 
 
@@ -43,17 +45,14 @@ def classify(row, listing_date, delisting_date, calendar, previous=None):
         return result('no_limit', 'registration_first_five_sessions')
     if session == 1:
         return result('unknown', 'legacy_ipo_or_relisting_first_day')
-    rate = Decimal('.20') if board == 'star' or (board == 'chinext' and d >= date(2020,8,24)) else Decimal('.10')
-    if board == 'main' and row['is_st'] and d < date(2026,7,6): rate = Decimal('.05')
-    elif board == 'chinext' and d < date(2020,8,24) and row['is_st']:
-        return result('unknown', 'pre_reform_chinext_special_status')
+    rate = regular_rates(board,d,row['is_st'])[0]
     pre = row.get('pre_close')
     if pre is None or pre <= 0 or row.get('close') is None:
         return result('unknown', 'reference_price_missing')
     pre = Decimal(str(pre))
     if pre != pre.quantize(Decimal('.01')):
         return result('unknown', 'reference_price_not_on_tick')
-    price = max(pre + Decimal('.01'), (pre*(1+rate)).quantize(Decimal('.01'), rounding=ROUND_HALF_UP))
+    price = rounded_limit_price(pre,rate)
     if Decimal(str(row['close'])) > price or (row.get('high') is not None and Decimal(str(row['high'])) > price):
         return result('unknown', 'price_exceeds_rule_special_event_or_source_error', price)
     return result('up' if Decimal(str(row['close'])) == price else 'not_up', 'regular_rule_eod', price)
