@@ -15,7 +15,7 @@ from sqlalchemy import text
 from app.db.session import engine
 from app.research.queries import Research, DEFAULT_ROOT
 
-VERSION = 'research-final-v1'
+VERSION = 'research-final-v2.6'
 
 
 def dump(path, value):
@@ -35,14 +35,80 @@ def outcome(value):
     return 'success' if value is True else 'failure' if value is False else 'unknown'
 
 
-def build(root=DEFAULT_ROOT, end=None):
+SOURCE_VERSION = 'daily-source-selection-v2.6'
+
+
+def select_daily_prices(db, export):
+    """Compare latest compatible candidates BEFORE provider preference.
+
+    Inputs are normalized unadjusted CNY/share daily bars (raw_daily) and
+    pg_stock_daily. Missing pre_close remains unknown: recovery belongs to D2.
+    Conflicting valid prices/references have NO selected tuple. Invalid rows
+    remain in price_candidates with reasons; they cannot defeat a valid fallback.
+    Metadata supplements keep their existing independent provenance/selection.
+    """
+    export('pg_price_candidates', """SELECT * FROM pg_stock_daily
+        WHERE adjustment='none' AND ingestion_status='success'
+          AND provider IN ('akshare','baostock')
+        QUALIFY row_number() OVER(PARTITION BY provider,stock_code,trade_date
+          ORDER BY fetched_at DESC NULLS LAST,id DESC)=1""")
+    export('price_candidates', """WITH candidates AS (
+        SELECT stock_code,trade_date,open,high,low,close,volume,amount,pre_close,source,
+          NULL::BIGINT pg_daily_id,NULL::BIGINT raw_id FROM raw_daily
+        UNION ALL
+        SELECT stock_code,trade_date,open,high,low,close,volume,amount,pre_close,
+          provider,id,raw_id FROM pg_price_candidates
+      ), checked AS (SELECT *,
+        CASE WHEN source LIKE 'purchased_%'
+                   AND trade_date BETWEEN DATE '2017-01-03' AND DATE '2026-03-13' THEN 0
+             WHEN source LIKE 'akshare%' THEN 1
+             WHEN source='baostock' THEN 2 ELSE 99 END priority,
+        coalesce(open>0 AND high>0 AND low>0 AND close>0
+          AND isfinite(open) AND isfinite(high) AND isfinite(low) AND isfinite(close)
+          AND high>=greatest(open,low,close) AND low<=least(open,high,close)
+          AND volume>=0 AND amount>=0 AND isfinite(volume) AND isfinite(amount)
+          AND abs(open-round(open,2))<1e-6 AND abs(high-round(high,2))<1e-6
+          AND abs(low-round(low,2))<1e-6 AND abs(close-round(close,2))<1e-6,false) ohlc_valid,
+        coalesce(pre_close>0 AND isfinite(pre_close)
+          AND abs(pre_close-round(pre_close,2))<1e-6,false) reference_valid
+        FROM candidates
+      ) SELECT *,
+        ohlc_valid AND (pre_close IS NULL OR reference_valid) AND priority<99 selectable,
+        CASE WHEN priority=99 THEN 'source_outside_policy'
+             WHEN NOT ohlc_valid THEN 'invalid_ohlcv'
+             WHEN pre_close IS NOT NULL AND NOT reference_valid THEN 'invalid_reference'
+             WHEN pre_close IS NULL THEN 'reference_missing_pending_D2'
+             ELSE 'internally_valid_reference_not_economic_certification' END candidate_reason
+      FROM checked""")
+    # All comparisons are per stock-day and per field; never vote or compare
+    # different adjustment modes. Volumes are shares, amounts CNY after ingestion.
+    export('price_conflicts', """SELECT stock_code,trade_date,count(*) candidates,
+        count(*) FILTER(WHERE selectable) valid_candidates,
+        count(*) FILTER(WHERE ohlc_valid AND priority<99 AND reference_valid) reference_candidates,
+        count(DISTINCT (round(open,2),round(high,2),round(low,2),round(close,2)))
+          FILTER(WHERE ohlc_valid AND priority<99)>1 ohlc_conflict,
+        count(DISTINCT round(pre_close,2)) FILTER(WHERE ohlc_valid AND priority<99 AND reference_valid)>1 reference_conflict,
+        max(close) FILTER(WHERE selectable)-min(close) FILTER(WHERE selectable) close_spread,
+        coalesce(max(volume) FILTER(WHERE selectable)-min(volume) FILTER(WHERE selectable)>1e-6,false) volume_conflict,
+        coalesce(max(amount) FILTER(WHERE selectable)-min(amount) FILTER(WHERE selectable)>0.011,false) amount_conflict
+      FROM price_candidates GROUP BY 1,2""")
+    db.sql("""SELECT p.* FROM price_candidates p JOIN price_conflicts c USING(stock_code,trade_date)
+      WHERE p.selectable AND NOT c.ohlc_conflict AND NOT c.reference_conflict
+      QUALIFY row_number() OVER(PARTITION BY stock_code,trade_date
+        ORDER BY priority,CASE WHEN pg_daily_id IS NULL THEN 0 ELSE 1 END,source,pg_daily_id DESC NULLS LAST)=1""").create_view('prices')
+
+
+def build(root=DEFAULT_ROOT, end=None, *, candidate_only=True, output_root=None):
     from app.services.calendar import completed_date
     root = Path(root).resolve()
-    target = root / 'research/unified'
+    source_target = root / 'research/unified'
+    target = (Path(output_root).resolve() if output_root is not None else root) / 'research/unified'
+    if output_root is not None and not candidate_only:
+        raise ValueError('Isolated builds must remain candidate-only')
     if end is None:
-        current=json.loads((target/'manifest.json').read_text())
-        current_path=(target/current['dataset']).resolve()
-        if not current_path.is_relative_to(target):raise ValueError('Invalid snapshot path')
+        current=json.loads((source_target/'manifest.json').read_text())
+        current_path=(source_target/current['dataset']).resolve()
+        if not current_path.is_relative_to(source_target):raise ValueError('Invalid snapshot path')
         end=date.fromisoformat(json.loads((current_path/'summary.json').read_text())['data_end'])
     if end>completed_date():raise ValueError('截止日尚未收盘')
     stamp = datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')
@@ -171,18 +237,8 @@ def build(root=DEFAULT_ROOT, end=None):
             'diagnostic' AS quality_status FROM pg_market_sentiment_daily""")
         db.sql("""SELECT * FROM market_sentiment QUALIFY row_number() OVER(PARTITION BY trade_date
             ORDER BY CASE provider WHEN 'tushare_proxy' THEN 0 ELSE 1 END,calculated_at DESC)=1""").create_view('selected_sentiment')
-        # An OHLCV tuple is chosen as a unit: purchased > extension > local BaoStock > local AKShare.
-        export('price_candidates', """SELECT stock_code,trade_date,open,high,low,close,volume,amount,pre_close,source,
-            NULL::BIGINT AS pg_daily_id, CASE WHEN source LIKE 'purchased_%' THEN 0 ELSE 1 END AS priority FROM raw_daily
-            UNION ALL SELECT stock_code,trade_date,open,high,low,close,volume,amount,pre_close,provider,id,
-            CASE provider WHEN 'baostock' THEN 2 ELSE 3 END FROM daily_supplements""")
-        export('price_conflicts', """SELECT stock_code,trade_date,count(*) AS candidates,
-            max(close)-min(close) AS close_spread,
-            count(DISTINCT (open,high,low,close))>1 AS ohlc_conflict
-            FROM price_candidates GROUP BY 1,2 HAVING count(*)>1""")
-        db.sql("""SELECT * FROM price_candidates QUALIFY row_number() OVER(PARTITION BY stock_code,trade_date
-            ORDER BY priority,source,pg_daily_id DESC NULLS LAST)=1""").create_view('prices')
-        db.sql("""SELECT stock_code,trade_date FROM prices UNION SELECT stock_code,trade_date FROM events
+        select_daily_prices(db, export)
+        db.sql("""SELECT stock_code,trade_date FROM price_candidates UNION SELECT stock_code,trade_date FROM events
             UNION SELECT stock_code,trade_date FROM day_evidence""").create_view('keys')
         export('resolved_historical_status', """SELECT h.stock_code,c.trade_date,
             CASE WHEN count(DISTINCT (risk_warning_status='none')) FILTER(WHERE risk_warning_status<>'unknown')=1
@@ -228,7 +284,7 @@ def build(root=DEFAULT_ROOT, end=None):
             coalesce(m.quality_status,'unknown') AS sentiment_quality,
             f.evidence_ids AS limit_evidence_ids, f.known_at_utc AS limit_known_at_utc,
             e.available_at AS event_available_at, false AS feature_pit_verified,
-            coalesce(pc.ohlc_conflict,false) AS price_conflict,
+            (coalesce(pc.ohlc_conflict,false) OR coalesce(pc.reference_conflict,false)) AS price_conflict,
             coalesce(ec.status_conflict,false) OR coalesce(e.limit_type='up' AND f.status='confirmed_not_limit_up',false) OR coalesce(e.limit_type IN ('down','broken') AND f.status='confirmed_limit_up',false) AS event_conflict
             FROM keys k LEFT JOIN prices p USING(stock_code,trade_date)
             LEFT JOIN daily_supplements v USING(stock_code,trade_date)
@@ -306,18 +362,22 @@ def build(root=DEFAULT_ROOT, end=None):
     files = {str(p.relative_to(out)):sha(p) for p in out.rglob('*') if p.is_file()}
     manifest = dict(version=VERSION,dataset=str(out.relative_to(target)),files=files)
     dump(out / 'manifest.json', manifest)
-    dump(target / 'manifest.tmp', manifest)
-    (target / 'manifest.tmp').replace(target / 'manifest.json')
+    if not candidate_only:
+        dump(target / 'manifest.tmp', manifest)
+        (target / 'manifest.tmp').replace(target / 'manifest.json')
     print(json.dumps({'snapshot': str(out), 'rows': summary['rows'], 'counts': summary['counts'], 'tables': summary['tables']},ensure_ascii=False), flush=True)
+    return out
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--root', type=Path, default=DEFAULT_ROOT)
     parser.add_argument('--end', type=date.fromisoformat, help='截止交易日；默认保留当前快照截止日')
+    parser.add_argument('--output-root', type=Path, help='Isolated candidate output; source root remains read-only')
+    parser.add_argument('--activate', action='store_true', help='Explicitly publish the new release; default is candidate only')
     args = parser.parse_args()
     lock = args.root / 'research/unified/build.lock'
     lock.parent.mkdir(parents=True, exist_ok=True)
     with lock.open('a') as handle:
         fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        build(args.root,args.end)
+        build(args.root,args.end,candidate_only=not args.activate,output_root=args.output_root)

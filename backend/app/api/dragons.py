@@ -4,7 +4,8 @@ from fastapi import APIRouter,Depends,Query,HTTPException
 from app.research.dragon_queries import Dragons
 from app.providers.normalize import stock_code
 
-router=APIRouter(prefix='/api/research/dragons',tags=['dragon research v0.5'])
+from app.statistics.stock_scope import scope_context
+router=APIRouter(prefix='/api/research/dragons',tags=['dragon research v0.5'],dependencies=[Depends(scope_context)])
 
 def dataset(scope:Literal['all','confirmed_non_st','confirmed_st','unknown','non_st','legacy']='all'):
     try:
@@ -251,6 +252,14 @@ def st_research_summary(scope:Literal['all','confirmed_non_st','confirmed_st','u
         m=json.loads((root/'manifest.json').read_text())
         report=json.loads((root/m['dataset']/'summary.json').read_text())
     except FileNotFoundError as exc:raise HTTPException(503,'历史ST视图尚未构建') from exc
+    from app.statistics.stock_scope import CHOICE
+    if any(CHOICE.get()):
+        from collections import Counter
+        from app.research.st_research_scope import apply
+        parent=root.parent/'dragon_seasonality_exploratory'/report['source_snapshot']
+        sample=[r for r in json.loads((parent/'samples.json').read_text()) if r['cohort']==cohort]
+        selected,eligibility=apply(sample,cohort,scope=scope)
+        report['cohorts'][cohort][scope]=dict(outcomes=dict(Counter(r['outcome'] for r in selected)),**eligibility)
     return {'data':report['cohorts'][cohort][scope], 'meta':{'version':report['version'],'source_snapshot':report['source_snapshot'],
         'audit_693':report['audit_693'],'historical_facts_unchanged':True}}
 

@@ -1,0 +1,6 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';
+import {normalize,dateRange,restore,initial,escapeHtml} from '../src/lib/indicator-lab.ts';
+test('population Z score preserves missing and handles constants',()=>{assert.deepEqual(normalize([null,2,2]),[null,null,null]);assert.deepEqual(normalize([1,null,3]),[-1,null,1]);assert.deepEqual(normalize([1]),[null]);const z=normalize([1,2,3]);assert.ok(Math.abs(z.reduce((a,b)=>a+b,0))<1e-10);assert.ok(Math.abs(z.reduce((a,b)=>a+b*b,0)/3-1)<1e-10)});
+test('calendar presets and custom bounds',()=>{assert.deepEqual(dateRange({...initial,range:'30'},'2017-01-03','2026-11-10'),['2026-10-12','2026-11-10']);assert.deepEqual(dateRange({...initial,range:'3y'},'2017-01-03','2026-11-10'),['2023-11-10','2026-11-10']);assert.deepEqual(dateRange({...initial,range:'custom',start:'2024-01-02',end:'2024-02-01'},'2017-01-03','2026-11-10'),['2024-01-02','2024-02-01'])});
+test('saved configuration round trips axes, filters, mode and visibility',()=>{const w={...initial,mode:'zscore',exclude_st:true,selected:[{id:'qqq_close',axis:1,visible:false}]};assert.deepEqual(restore(JSON.parse(JSON.stringify(w)),['qqq_close']),w);assert.deepEqual(restore(w,[]).selected,[]);assert.throws(()=>restore({},[]))});
+test('tooltip escapes source strings',()=>{assert.equal(escapeHtml('<img>'), '&lt;img&gt;')});

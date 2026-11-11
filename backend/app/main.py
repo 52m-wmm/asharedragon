@@ -35,3 +35,6 @@ app.include_router(history_limits_router)
 
 from app.api.data_inventory import router as data_inventory_router
 app.include_router(data_inventory_router)
+
+from app.api.indicator_lab import router as indicator_lab_router
+app.include_router(indicator_lab_router)

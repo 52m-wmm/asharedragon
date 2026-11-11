@@ -216,4 +216,6 @@ def query(**filters):
     snapshot=str(Path(DEFAULT_ROOT).resolve()/'research/unified'/lock['unified_dataset'])
     validate_release(snapshot)
     rows,coverage,meta=load_release(snapshot)
+    from app.statistics.stock_scope import filter_research
+    rows=filter_research(rows,source_snapshot=snapshot)
     return analyze(rows,coverage,meta,**filters)

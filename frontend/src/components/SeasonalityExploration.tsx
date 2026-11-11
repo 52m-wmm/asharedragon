@@ -1,6 +1,7 @@
 'use client';
 import {useEffect,useState} from 'react';
 import Link from 'next/link';
+import {useStockScope} from './StockScope';
 import Chart from './Chart';
 const API=process.env.NEXT_PUBLIC_API_URL||'http://127.0.0.1:8000';
 type Row=Record<string,any>;
@@ -14,7 +15,9 @@ export function SeasonalityExploration(){
  const [cohort,setCohort]=useState('direct'),[start,setStart]=useState('2017'),[end,setEnd]=useState('2026'),[board,setBoard]=useState(''),[regime,setRegime]=useState(''),[st,setSt]=useState('all'),[grade,setGrade]=useState('all'),[height,setHeight]=useState('5'),[month,setMonth]=useState<number|null>(null),[page,setPage]=useState(1);
  const [data,setData]=useState<Row|null>(null),[error,setError]=useState('');
  const q=new URLSearchParams({cohort,start_year:start,end_year:end,st,grade,height,page:String(page)});if(board)q.set('board',board);if(regime)q.set('regime',regime);if(month)q.set('month',String(month));
+ const {value:stockScope}=useStockScope();q.set('exclude_st',String(stockScope.exclude_st));q.set('exclude_ipo',String(stockScope.exclude_ipo));
  const query=q.toString();
+ useEffect(()=>{setPage(1)},[stockScope]);
  const ready=data?._query===query;
  useEffect(()=>{const c=new AbortController();setData(null);setError('');fetch(API+'/api/research/dragons/seasonality-study-v1?'+query,{signal:c.signal}).then(async r=>{const j=await r.json();if(!r.ok)throw Error(j.error?.message||'筛选参数无效');setData({...j,_query:query})}).catch(e=>{if(e.name!=='AbortError')setError(e.message)});return()=>c.abort()},[query]);
  const pick=(m:number|null)=>{setMonth(m);setPage(1)};

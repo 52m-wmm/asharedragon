@@ -4,6 +4,8 @@ import hashlib,json
 from datetime import datetime,timezone
 import duckdb
 from app.research.unified import UnifiedResearch
+from app.research.queries import DEFAULT_ROOT
+from scripts.build_market_breadth import snapshot, manifest_path
 from app.statistics.history_limits import VERSION,classification_sql,streak_sql
 from app.statistics.reference_recovery import extract,SOURCE
 ROOT=Path.home()/'Datasets/asharedragon/statistics/history_limits'
@@ -11,12 +13,14 @@ ROOT=Path.home()/'Datasets/asharedragon/statistics/history_limits'
 def save(path,x):path.write_text(json.dumps(x,ensure_ascii=False,indent=2,default=str,allow_nan=False)+'\n')
 def records(db,sql):
  c=db.execute(sql);return [dict(zip([x[0] for x in c.description],r)) for r in c.fetchall()]
-def build():
- with UnifiedResearch() as u:
+def build(root=DEFAULT_ROOT):
+ target=Path(root).resolve()/'statistics/history_limits'
+ source,selected=snapshot(Path(root)/'research/unified')
+ with UnifiedResearch(root,dataset=selected['dataset']) as u:
   source=u.path
   data_end=u.summary['data_end']
  key=hashlib.sha256((str(source)+Path('backend/app/statistics/history_limits.py').read_text()+Path(__file__).read_text()+Path('backend/app/statistics/reference_recovery.py').read_text()).encode()).hexdigest()[:20]
- out=ROOT/'snapshots'/key;out.mkdir(parents=True,exist_ok=True)
+ out=target/'snapshots'/key;out.mkdir(parents=True,exist_ok=True)
  db=duckdb.connect(config={'memory_limit':'2GB','threads':4});db.execute(f"SET temp_directory='{out}/tmp'")
  db.execute(f"ATTACH '{source}/research.duckdb' AS src (READ_ONLY)")
  db.execute("""CREATE TEMP TABLE cal AS SELECT trade_date,row_number() OVER(ORDER BY trade_date)-1 session_index FROM src.calendar""")
@@ -99,6 +103,9 @@ def build():
      reference_policy='source pre_close or raw close-change with pct/OHLC consistency; observed breaks stay unknown; no lag fill',reference_recovery=recovery,
      cycle_policy='calendar-consecutive positive observations; unknown breaks runs; run_start is not necessarily exact first board',
      formal_research_eligible=False,built_at_utc=datetime.now(timezone.utc).isoformat()))
- save(ROOT/'manifest.json',dict(version=VERSION,dataset=str(out.relative_to(ROOT))))
+ save(manifest_path(target),dict(version=VERSION,dataset=str(out.relative_to(target))))
  db.close();print(json.dumps({'snapshot':str(out),'benchmark':bench,'exceptions':missing,'case_days':len(cases)},default=str))
-if __name__=='__main__':build()
+if __name__=='__main__':
+ import argparse
+ parser=argparse.ArgumentParser();parser.add_argument('--root',type=Path,default=DEFAULT_ROOT)
+ build(parser.parse_args().root)

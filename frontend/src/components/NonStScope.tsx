@@ -1,12 +1,14 @@
 'use client';
 import {useEffect,useState} from 'react';
+import {useScopedUrl,useStockScope} from './StockScope';
 type Row=Record<string,any>;
 const API=process.env.NEXT_PUBLIC_API_URL||'http://127.0.0.1:8000';
 const names:Record<string,string>={all:'全部股票',confirmed_non_st:'已确认非ST',confirmed_st:'已确认ST',unknown:'状态未知',legacy:'原研究版本对照（76成功 / 5298失败）'};
-export function ScopeChoice({scope,setScope}:{scope:string;setScope:(s:string)=>void}){return <div className="notice"><label>历史ST研究范围 <select aria-label="研究资格版本" value={scope} onChange={e=>setScope(e.target.value)}>{Object.entries(names).map(([k,v])=><option key={k} value={k}>{v}</option>)}</select></label><p>历史ST是独立属性，不撤销已确认涨停事实。未知状态可进入探索研究，不能进入严格非ST统计。按周期已观测结果日期筛选；状态变化或日期证据缺失归入未知。不同ST状态与制度背景分别统计。</p>{scope==='legacy'&&<p>不可变历史版本对照；旧版汇总比例含混合制度，不用于当前组间比较。</p>}</div>}
+export function ScopeChoice({scope,setScope}:{scope:string;setScope:(s:string)=>void}){const {value}=useStockScope();const filtered=value.exclude_st||value.exclude_ipo;useEffect(()=>{if(filtered&&scope==='legacy')setScope('all')},[filtered,scope,setScope]);return <div className="notice"><label>历史ST研究范围 <select aria-label="研究资格版本" value={scope} onChange={e=>setScope(e.target.value)}>{Object.entries(names).map(([k,v])=><option key={k} value={k} disabled={filtered&&k==='legacy'}>{v}</option>)}</select></label><p>历史ST是独立属性，不撤销已确认涨停事实。未知状态可进入探索研究，不能进入严格非ST统计。按周期已观测结果日期筛选；状态变化或日期证据缺失归入未知。不同ST状态与制度背景分别统计。</p>{scope==='legacy'&&<p>不可变历史版本对照；旧版汇总比例含混合制度，不用于当前组间比较。</p>}</div>}
 export function NonStScope({scope='all'}:{scope?:string}){
  const [value,setValue]=useState<Row|null>(null),[error,setError]=useState(''),[cohort,setCohort]=useState('direct');
- useEffect(()=>{const c=new AbortController();setValue(null);setError('');fetch(API+'/api/research/dragons/st-research-scope?scope='+scope+'&cohort='+cohort,{signal:c.signal}).then(async r=>{const j=await r.json();if(!r.ok)throw Error(j.detail||'状态加载失败');setValue(j)}).catch(e=>{if(e.name!=='AbortError')setError(e.message)});return()=>c.abort()},[scope,cohort]);
+ const path=useScopedUrl('/api/research/dragons/st-research-scope?scope='+scope+'&cohort='+cohort);
+ useEffect(()=>{const c=new AbortController();setValue(null);setError('');fetch(API+path,{signal:c.signal}).then(async r=>{const j=await r.json();if(!r.ok)throw Error(j.detail||'状态加载失败');setValue(j)}).catch(e=>{if(e.name!=='AbortError')setError(e.message)});return()=>c.abort()},[path]);
  const data=value?.data;
  return <section className="panel" data-testid="st-research-scope"><div className="panel-head"><h2>历史ST属性与分组研究</h2><span className="badge">局部证据 · 探索性分析</span></div><label>样本来源 <select value={cohort} onChange={e=>setCohort(e.target.value)}><option value="direct">独立涨停事实</option><option value="reconstruction">日线重建诊断</option></select></label>
  <p className="panel-copy">{data?.selection_bias} 分母仅含结局已知的成功和失败；ST未知与结局未知是两个独立属性。原始事实及旧研究版本完整保留。制度名称描述历史背景，未核实的特殊制度不视为普通10%或20%。</p>

@@ -1,5 +1,6 @@
 'use client';
 import {useEffect,useState} from 'react';
+import {useScopedUrl} from './StockScope';
 import Link from 'next/link';
 
 type Field={value:boolean|number|string|null;quality:string;evidence_ids:string[];known_at_utc:string|null};
@@ -19,7 +20,7 @@ export function ObservedStreaks({code,scope='all'}:{code?:string;scope?:string})
   const [sort,setSort]=useState('observed_min_height'),[page,setPage]=useState(1),[result,setResult]=useState<Result|null>(null),[error,setError]=useState('');
   const query=new URLSearchParams({scope,min_height:height,start_year:start,end_year:end,sort,page:String(page),page_size:'20'});
   if(code||search.trim())query.set('code',code||search.trim());
-  const path='/api/research/dragons/observed-streaks?'+query.toString();
+  const path=useScopedUrl('/api/research/dragons/observed-streaks?'+query.toString());
   useEffect(()=>{const controller=new AbortController();setResult(null);setError('');
     fetch(API+path,{signal:controller.signal,cache:'no-store'}).then(async r=>{const data=await r.json();if(!r.ok)throw Error(data.error?.message||'事实标签读取失败');setResult(data)}).catch(e=>{if(e.name!=='AbortError')setError(e.message)});
     return()=>controller.abort();},[path]);

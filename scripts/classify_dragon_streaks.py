@@ -1,16 +1,24 @@
 """Classify existing cycles and their positive-day OHLC; no daily re-identification."""
 from pathlib import Path
 import json,hashlib
+from scripts.finalize_research import sha
 import duckdb,pyarrow as pa
 from app.statistics.history_limit_queries import ROOT
 from app.statistics.streak_classification import VERSION,classify_origin,morphology
 
 def records(db,sql):
  c=db.execute(sql);return [dict(zip([x[0] for x in c.description],r)) for r in c.fetchall()]
-def build():
- m=json.loads((ROOT/'manifest.json').read_text());source=ROOT/m['dataset'];meta=json.loads((source/'summary.json').read_text());unified=Path(meta['source_snapshot'])
+def build(root=ROOT,source_dataset=None):
+ ROOT=Path(root).resolve()
+ m=json.loads((ROOT/'manifest.json').read_text())
+ if source_dataset:m['dataset']=source_dataset
+ source=(ROOT/m['dataset']).resolve()
+ if not source.is_relative_to(ROOT/'snapshots'):raise ValueError('Invalid H snapshot')
+ meta=json.loads((source/'summary.json').read_text());unified=Path(meta['source_snapshot'])
  key=hashlib.sha256((str(source)+Path(__file__).read_text()+Path('backend/app/statistics/streak_classification.py').read_text()).encode()).hexdigest()[:20]
- out=ROOT/'classifications'/key;out.mkdir(parents=True,exist_ok=True)
+ out=ROOT/'classifications'/key
+ if out.exists():raise FileExistsError('Immutable classification already exists: '+str(out))
+ out.mkdir(parents=True)
  db=duckdb.connect(config={'memory_limit':'1GB','threads':2})
  db.execute(f"ATTACH '{unified}/research.duckdb' AS src (READ_ONLY)")
  for name in ('cycles','positives','days'):db.read_parquet(str(source/(name+'.parquet'))).create_view(name)
@@ -62,6 +70,14 @@ def build():
   db.execute(f"COPY (SELECT * FROM enriched WHERE year(run_start)={year} AND height>=10 ORDER BY run_start,stock_code) TO '{out}/audit_{year}_ge10.csv' (HEADER,DELIMITER ',')")
  summary=dict(version=VERSION,source_dataset=m['dataset'],source_snapshot=str(source),unified_snapshot=str(unified),cycle_count=len(classified),unique_cycle_count=len(classified),duplicate_keys=0,overlapping_cycles=0,positive_days=db.execute('SELECT count(*) FROM positives').fetchone()[0],yearly=yearly,turnover=turnover)
  (out/'summary.json').write_text(json.dumps(summary,ensure_ascii=False,indent=2)+'\n')
- (ROOT/'classification_manifest.json').write_text(json.dumps(dict(version=VERSION,dataset=str(out.relative_to(ROOT)),source_dataset=m['dataset']),indent=2)+'\n')
+ inputs={'source_snapshot':str(source),'unified_snapshot':str(unified),'files':{str(p):sha(p) for p in [source/'cycles.parquet',source/'positives.parquet',source/'days.parquet',source/'summary.json',unified/'research.duckdb',unified/'stocks.parquet',unified/'calendar.parquet']}}
+ (out/'inputs.json').write_text(json.dumps(inputs,indent=2)+'\n')
+ manifest=dict(version=VERSION,dataset=str(out.relative_to(ROOT)),source_dataset=m['dataset'],files={p.name:sha(p) for p in out.iterdir() if p.is_file()})
+ (out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
  print(json.dumps(dict(path=str(out),audit2017=records(db,"SELECT ipo_origin,count(*) n FROM enriched WHERE year(run_start)=2017 AND height>=10 GROUP BY 1")),ensure_ascii=False))
-if __name__=='__main__':build()
+ db.close()
+ return out
+
+if __name__=='__main__':
+ import argparse
+ p=argparse.ArgumentParser();p.add_argument('--source-dataset');a=p.parse_args();build(source_dataset=a.source_dataset)

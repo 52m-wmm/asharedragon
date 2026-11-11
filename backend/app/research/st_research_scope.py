@@ -60,6 +60,8 @@ def apply(rows, cohort='direct', *, scope='all', whole_cycle=False, keep_unknown
         if scope == 'confirmed_non_st' and not a['strict_non_st_eligible']: continue
         if scope in ('confirmed_st', 'unknown') and a['status'] != scope: continue
         result.append({**r, 'historical_st': a})
+    from app.statistics.stock_scope import filter_research
+    result = filter_research(result)
     groups = defaultdict(list)
     for r in result:
         a = r['historical_st']

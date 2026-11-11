@@ -1,0 +1,5 @@
+import {test} from 'node:test';import assert from 'node:assert/strict';import {primaryNavigation,stockNavigation,dataNavigation,navigationSection} from '../src/lib/navigation.ts';
+test('three primary destinations in product order',()=>assert.deepEqual(primaryNavigation.map(x=>x.label),['市场总览','指标研究室','股票研究']));
+test('existing research routes retain visible secondary links',()=>{for(const p of ['/stock','/pool','/dragons','/seasonality']){assert.equal(navigationSection(p),'stock');assert.ok(stockNavigation.some(x=>x.href===p))}});
+test('data tools and legacy paths belong to data management',()=>{for(const p of ['/data','/data/lifecycle','/data/operations','/supplier','/supplier/pool'])assert.equal(navigationSection(p),'data');assert.ok(dataNavigation.some(x=>x.href==='/data#field-quality'));assert.ok(dataNavigation.some(x=>x.href==='/data/operations'))});
+test('market and lab selection independent from tools',()=>{assert.equal(navigationSection('/'),'market');assert.equal(navigationSection('/indicator-lab'),'lab');assert.equal(navigationSection('/not-a-route'),null)});

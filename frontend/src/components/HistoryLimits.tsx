@@ -1,6 +1,8 @@
 'use client';
 import {useEffect,useState,useId} from 'react';
 import Link from 'next/link';
+import MarketSentiment from './MarketSentiment';
+import {StockScopeProvider,StockScopeFilter,useScopedUrl} from './StockScope';
 import dynamic from 'next/dynamic';
 const Chart=dynamic(()=>import('./Chart'),{ssr:false});
 const API=process.env.NEXT_PUBLIC_API_URL||'http://127.0.0.1:8000';
@@ -12,16 +14,16 @@ const origins:Row={ipo_initial:'IPO初始连板',non_ipo:'非IPO连板',unknown:
 const shapes:Row={one_price_all:'全部一字OHLC',traded_range_all:'全部有价格区间',mixed:'混合形态',unknown:'OHLC形态unknown'};
 const dailyShapes:Row={one_price:'一字涨停',t_shape:'T 字涨停',other_close_up:'其他收盘涨停',unknown:'形态待核实'};
 const st:Row={confirmed_st:'历史ST已确认',confirmed_non_st:'历史非ST已确认',unknown:'历史ST未知',mixed:'历史ST状态跨期变化'};
-function useResult(path:string){const [result,setResult]=useState<Row|null>(null),[error,setError]=useState('');useEffect(()=>{const c=new AbortController();setError('');fetch(API+path,{signal:c.signal}).then(async r=>{const j=await r.json();if(!r.ok)throw Error(j.error?.message||'统计读取失败');setResult({...j,_path:path})}).catch(e=>{if(e.name!=='AbortError')setError(e.message)});return()=>c.abort()},[path]);return {data:result?._path===path?result:null,error}}
-export function HistoryLimits({ranking=false,overview=false}:{ranking?:boolean;overview?:boolean}){
+function useResult(input:string){const path=useScopedUrl(input);const [result,setResult]=useState<Row|null>(null),[error,setError]=useState('');useEffect(()=>{const c=new AbortController();setError('');fetch(API+path,{signal:c.signal}).then(async r=>{const j=await r.json();if(!r.ok)throw Error(j.error?.message||'统计读取失败');setResult({...j,_path:path})}).catch(e=>{if(e.name!=='AbortError')setError(e.message)});return()=>c.abort()},[path]);return {data:result?._path===path?result:null,error}}
+function HistoryLimitsContent({ranking=false,overview=false}:{ranking?:boolean;overview?:boolean}){
  const signalGroup=useId();
  const [year,setYear]=useState('2026'),[month,setMonth]=useState(''),[mode,setMode]=useState('all'),[height,setHeight]=useState(ranking?3:1),[view,setView]=useState(ranking?'cycles':'daily'),[day,setDay]=useState(''),[page,setPage]=useState(1),[classification,setClassification]=useState('all');
  const p=new URLSearchParams({year,mode,height:String(height),view,page:String(page)});if(view==='cycles')p.set('classification',classification);if(month)p.set('month',month);if(day&&view==='daily')p.set('trade_date',day);
- const {data,error}=useResult('/api/history-limits?'+p);const daily:Row[]=data?.daily||[];const selected=daily.find(r=>r.trade_date===data?.selected_date);const values=daily.map(r=>r.trade_date);
+ const scopePath=useScopedUrl('/api/history-limits?'+p);useEffect(()=>{setPage(1)},[scopePath.split('exclude_st=')[1]]);const {data,error}=useResult('/api/history-limits?'+p);const daily:Row[]=data?.daily||[];const selected=daily.find(r=>r.trade_date===data?.selected_date);const values=daily.map(r=>r.trade_date);
  const reset=()=>{setPage(1);setDay('')};
  const periodCount=(key:string)=>daily.some(r=>r[key]!=null)?daily.reduce((a,r)=>a+(r[key]??0),0):null;
  return <section data-testid="history-limits"><div className="title-row"><div><h1>{ranking?'历史连板排行榜':overview?'历史涨停概览':'涨停股票池'}</h1><p>{overview?'查看每日涨停数量与历史趋势':'按日期、证据类别和连板高度查找股票'} · 已确认记录与规则推算分别展示</p></div><Link className="badge" href={overview?'/pool':'/'}>{overview?'查看股票明细 →':'返回历史概览 →'}</Link></div>
- <div className="filters">
+ <StockScopeFilter/><div className="filters">
  <label>年份<select aria-label="统计年份" value={year} onChange={e=>{setYear(e.target.value);reset()}}>{Array.from({length:10},(_,i)=>2017+i).map(y=><option key={y}>{y}</option>)}</select></label>
  <label>月份<select aria-label="统计月份" value={month} onChange={e=>{setMonth(e.target.value);reset()}}><option value="">全年</option>{Array.from({length:12},(_,i)=>i+1).map(m=><option key={m} value={m}>{m}月</option>)}</select></label>
  <label>展示范围<select aria-label="统计证据范围" value={mode} onChange={e=>{setMode(e.target.value);setPage(1)}}><option value="all">已确认 + 规则推算</option><option value="confirmed">仅已确认</option></select></label>
@@ -34,7 +36,10 @@ export function HistoryLimits({ranking=false,overview=false}:{ranking?:boolean;o
  {view==='cycles'&&<p className="notice">IPO归属、OHLC形态与历史ST是独立字段。换手候选仅纳入非IPO、段内所有交易日有可信价格区间且成交量为正的观察段，不证明可以买到或充分换手。未知归属保留在排除IPO视图；未知日不跨越连接，可能片段不宣称独立周期。</p>}
  {error&&<p role="alert" className="error">{error}</p>}{!data&&!error&&<p role="status">正在读取历史统计…</p>}
  {data&&<>
+ <p className="panel-copy">范围质量（所选年份观察股票日）：{(data.stock_scope?.yearly||[]).filter((r:any[])=>r[0]===Number(year)).map((r:any[])=><span key={r[0]}>纳入 {n(r[2])} / {n(r[1])}；ST 未知 {n(r[3])}；新股阶段未知 {n(r[4])}；IPO 特殊阶段 {n(r[5])}。</span>)}未知计数为筛选前背景，启用对应排除时不进入统计。</p>
  <p className="panel-copy">本地历史统计快照 · 日线截至 {data.meta.availability?.daily_through||'未知'} · 已确认涨停记录截至 {data.meta.availability?.confirmed_through||'暂无记录'}。各日期覆盖不一定连续。</p>
+ {data.ladder?.length>0&&<div className="panel"><h2>当日涨停梯队 · 同一股票范围</h2><div className="filters">{data.ladder.map((r:Row)=><span key={r.height}>{r.height} 板：{r.n} 只</span>)}</div></div>}
+ {data.promotions?.length>0&&<div className="panel"><h2>匹配队列晋级率 · 诊断口径</h2><p className="panel-copy">上一真实交易日的对应高度队列；两日均满足股票范围。缺失或资格未知不算失败，存在未知时比例留空。不是严格非 ST 全市场结论。</p><div className="table-scroll"><table><thead><tr><th>晋级</th><th>昨日队列</th><th>两日匹配 / 已知结局</th><th>晋级分子</th><th>结局未知 / 当日不纳入</th><th>比例</th></tr></thead><tbody>{data.promotions.map((r:Row)=><tr key={r.height}><td>{r.height} → {r.target}</td><td>{r.previous_cohort}</td><td>{r.matched_cohort} / {r.denominator}</td><td>{r.numerator}</td><td>{r.unknown} / {r.excluded_current}</td><td>{pct(r.rate)}</td></tr>)}</tbody></table></div></div>}
  {selected&&<><h2>{selected.trade_date} · 当日统计</h2><div className="metrics daily-signals" aria-label="当日统计">{[
  ['已确认涨停',selected.confirmed,'green','已有涨停证据'],
  ['当日触板',data.intraday?.touched,'','收盘涨停与触板未封住，去重'],
@@ -79,3 +84,5 @@ export function HistoricalCandles({code,day}:{code:string;day:string}){
  <div className="panel" data-testid="historical-candles"><div className="panel-head"><h2>日K线 · 人民币元</h2><small>{rows.length}个已覆盖交易日</small></div>{rows.length?<Chart height={420} option={{tooltip:{trigger:'axis'},xAxis:{type:'category',data:rows.map(r=>r.trade_date)},yAxis:{scale:true},dataZoom:[{type:'inside'},{type:'slider',bottom:0,height:18}],series:[{type:'candlestick',data:rows.map(r=>[r.open,r.close,r.low,r.high]),itemStyle:{color:'#e9777d',color0:'#35b99b',borderColor:'#e9777d',borderColor0:'#35b99b'},markLine:{symbol:'none',data:[{xAxis:day,name:'选定日期'}]}}]}}/>:<p className="panel-copy">该窗口日线尚不可用，不会自动下载或补造。</p>}</div>
  <div className="panel"><div className="panel-head"><h2>成交量</h2></div><Chart height={200} option={{xAxis:{type:'category',data:rows.map(r=>r.trade_date)},yAxis:{type:'value'},series:[{type:'bar',data:rows.map(r=>r.volume)}]}}/></div></>
 }
+
+export function HistoryLimits(props:{ranking?:boolean;overview?:boolean}){return <StockScopeProvider>{props.overview?<MarketSentiment/>:<HistoryLimitsContent {...props}/>}</StockScopeProvider>}

@@ -98,3 +98,9 @@ build/
 /docs/**/*.svg
 !/docs/screenshots/
 !/docs/screenshots/homepage.png
+
+# Next.js static exports and local verification outputs
+/out/
+/frontend/out/
+/playwright-report/
+/test-results/

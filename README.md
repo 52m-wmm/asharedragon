@@ -1,23 +1,23 @@
 # AShareDragon
 
-A local-first research workspace for historical A-share limit-up events, consecutive limit-up streaks, and dragon-stock analysis. Built with FastAPI, PostgreSQL, DuckDB/Parquet, and Next.js.
+A local-first **A-share historical indicator and trading-research workspace**. Built with Next.js / React / TypeScript / ECharts, FastAPI, PostgreSQL, and DuckDB/Parquet. The primary navigation is **Market Overview → Indicator Lab → Stock Research**, with secondary Data Management tools.
 
 **Confirmed events and rule-reconstructed candidates are different evidence classes. Seasonality has not been rigorously established. This project does not execute trades or guarantee returns.**
 
 ![AShareDragon historical limit-up homepage](docs/screenshots/homepage.png)
 
-*Actual homepage showing aggregate historical limit-up counts, evidence categories, coverage and observed streak-height trends. Stock-level records and raw market data are not included in the screenshot.*
+*Current, real Market Overview with the three-section navigation and aggregate historical metrics. Candidate, supplier-diagnostic and unknown values remain labelled. This screenshot contains no stock-level price records, raw responses or credentials; the underlying market datasets are not distributed.*
 
 ## What is implemented
 
-- **Historical limit-up dashboard** (`/`, `/pool`): daily lists, count trends, maximum observed streak height, year/month filters, confirmed-only filtering, unknown counts and coverage indicators.
-- **Calendar-aware streaks**: stock/date deduplication, no bridging of missing or unknown sessions, start/end boundaries and lower-bound heights for incomplete segments.
-- **IPO classification**: separate IPO-initial, non-IPO and unresolved origins; historical listing regimes; one-price OHLC morphology and traded-range candidates. A traded-range candidate is not proof of execution feasibility.
-- **Dragon research center** (`/dragons`): historical rankings, IPO filters, evidence quality, independent historical ST attributes, and non-IPO launch-month research. Clicking a month filters stocks; stock links open the corresponding historical candles.
-- **Seasonality and feature studies**: annual threshold counts, trusted-start month distributions, exploratory first-board features, missingness and sensitivity analyses. Strict evidence views remain separate from basic historical statistics.
-- **Data operations** (`/data`): collection job management, source provenance, coverage and audit tooling. Collection is explicit; do not launch collectors without the appropriate data rights and credentials.
+- **Market Overview** (`/`): historical breadth, advancing/declining counts, limit events, ladders, fixed-cohort promotion rates, positive/negative evidence and matched-cohort D1 changes. Unknown values remain null.
+- **Indicator Lab** (`/indicator-lab`): 13 existing historical indicators including QQQ; searchable categories, multi-series smooth curves, raw/Z-score views, two axes, date ranges, zoom and browser-local saved combinations. Smoothing affects display only, never values or missing-data gaps.
+- **Stock Research** (`/stock`, `/pool`, `/dragons`, `/seasonality`): unadjusted historical candles, limit-up lists, streak rankings, IPO classification, cycle evidence and exploratory seasonality. Existing URLs remain available.
+- **Shared stock scope**: all stocks / exclude historical ST / exclude IPO special stages, including explicit handling of unknown identity. Historical rules are not replaced by a fixed listing-age cutoff.
+- **Data Management** (`/data`, `/data/operations`): existing Inventory, field quality, snapshot versions and parent dependencies, collection jobs and source-error logs. Supplier views remain at `/supplier` and `/supplier/pool`.
+- **Versioned research releases**: U/H/E1/E2/E3/D1 plus non-IPO classification dependencies, with installation, consistency checking and rollback tooling. These tools require explicitly provisioned local data; starting the app does not publish or activate a release.
 
-The locally audited snapshot spans 2017–2026 (through 2026-11-06), with 10,343,963 unadjusted daily rows and 117,611 unique observation segments. These are **local snapshot counts**, not a downloadable dataset or proof that every historical limit-up was independently verified. The non-IPO ≥5-board study contains 1,740 observation segments; only 1,633 have a locatable launch boundary for monthly analysis.
+The locally validated active calendar spans 2,391 trading days from 2017-01-03 through 2026-11-10. Calendar coverage is not proof of complete stock coverage or independently confirmed historical events. A separate 2024–2026 candidate experiment is **not silently mixed into active Indicator Lab data**.
 
 ## Architecture
 
@@ -41,6 +41,8 @@ Source adapters, normalization, analytics, research queries and UI are separate 
 - The initial IPO sequence is not directly comparable with an ordinary post-listing streak. IPO-origin unknown is excluded from the non-IPO research main sample.
 - Monthly launch distributions use locatable first-board dates, not peak-price months. Uneven annual coverage, sparse independent evidence, repeated stocks, corporate actions and selection bias limit interpretation.
 - Feature availability is incomplete. Missing historical capitalisation, order-book, announcement-time or execution information is not filled with present-day values.
+- QQQ is aligned to the last completed US session before 09:25 Asia/Shanghai, accounting for US holidays and daylight saving. Strict historical-vintage checks can leave it unavailable; explicitly selected retrospective mode remains candidate evidence, not a certified point-in-time trading dataset. Raw QQQ closes are not total returns. NQ and A-share index extensions have no fabricated values.
+- Z-scores use the selected historical window for visual comparison, not leakage-free prediction.
 - No automated trading, return guarantee, validated predictive model, or claim of formally established seasonality is provided.
 
 Adapters include AKShare and BaoStock, optional Tushare-compatible access, and tools for locally licensed historical files. Provider access is not redistribution permission. Optional US-market context research is also documented separately. **No third-party dataset, purchased archive, credentials, database or raw API response is bundled.**
@@ -64,7 +66,7 @@ Set `DATABASE_URL` in the ignored `.env` for your local PostgreSQL instance. The
 Start the API and frontend in separate terminals:
 
 ```bash
-.venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
+PYTHONPATH=.:backend .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000
 npm run dev --prefix frontend
 ```
 
@@ -83,14 +85,16 @@ Use the [documentation index](docs/README.md) for schema, snapshot construction 
 ## Validation
 
 ```bash
-PYTHONPATH=backend .venv/bin/python -m pytest backend/tests scripts -q --disable-warnings
+PYTHONPATH=.:backend .venv/bin/python -m pytest backend/tests -q
+node --experimental-strip-types --test frontend/tests/*.test.mjs
 npm run typecheck --prefix frontend
+npm run lint --prefix frontend
 npm run build --prefix frontend
 ```
 
 PostgreSQL tests use isolated temporary schemas. Snapshot-dependent integration tests require authorized local artifacts; some skip when artifacts are absent, and older historical validation scripts assume local inputs. A successful fresh-clone installation is not equivalent to reproducing the local research results.
 
-See [release validation](docs/release_validation.md) for the actual test environment, results, security review and release boundary.
+See [current workspace release validation](docs/workspace_release_validation.md) and [previous release validation](docs/release_validation.md) for the actual test environment, results, security review and release boundary.
 
 ## Documentation
 

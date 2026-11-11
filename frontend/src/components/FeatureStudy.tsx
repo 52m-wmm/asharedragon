@@ -1,5 +1,6 @@
 'use client';
 import {useEffect,useState} from 'react';
+import {useScopedUrl} from './StockScope';
 import dynamic from 'next/dynamic';
 const Chart=dynamic(()=>import('./Chart'),{ssr:false});
 type Row=Record<string,any>;
@@ -12,7 +13,7 @@ const regimes:Record<string,string>={main_historical_10_or_5_special_unknown:'�
 export function FeatureStudy({scope='all'}:{scope?:string}){
   const [start,setStart]=useState('2017'),[end,setEnd]=useState('2026'),[month,setMonth]=useState(''),[board,setBoard]=useState(''),[regime,setRegime]=useState('');
   const [result,setResult]=useState<Row|null>(null),[error,setError]=useState('');
-  const query=new URLSearchParams({scope,start_year:start,end_year:end});if(month)query.set('month',month);if(board)query.set('board',board);if(regime)query.set('regime',regime);const url=query.toString();
+  const query=new URLSearchParams({scope,start_year:start,end_year:end});if(month)query.set('month',month);if(board)query.set('board',board);if(regime)query.set('regime',regime);const url=useScopedUrl('?'+query.toString()).slice(1);
   useEffect(()=>{const c=new AbortController();setResult(null);setError('');fetch(API+'/api/research/dragons/feature-study?'+url,{signal:c.signal}).then(async r=>{const j=await r.json();if(!r.ok)throw Error(j.detail||'首板研究加载失败');setResult(j)}).catch(e=>{if(e.name!=='AbortError')setError(e.message)});return()=>c.abort()},[url]);
   const data=result?.data,meta=result?.meta,cohort=data?.cohort,comparisons:Row[]=data?.comparisons||[],observed=comparisons.filter(c=>c.success.n+c.failure.n>0);
   return <section className="panel" data-testid="feature-study"><div className="panel-head"><h2>首板特征研究 · v0.6</h2><span className="badge">探索性分析 · 标签局部验证</span></div>

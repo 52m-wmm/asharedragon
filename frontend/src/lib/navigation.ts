@@ -1,0 +1,4 @@
+export const primaryNavigation=[{href:'/',label:'市场总览',icon:'◫'},{href:'/indicator-lab',label:'指标研究室',icon:'∿'},{href:'/stock',label:'股票研究',icon:'⌁'}];
+export const stockNavigation=[{href:'/stock',label:'个股与 K 线'},{href:'/pool',label:'涨停股票池'},{href:'/dragons',label:'连板与龙头'},{href:'/seasonality',label:'季节性研究'}];
+export const dataNavigation=[{href:'/data',label:'数据 Inventory'},{href:'/data#field-quality',label:'数据质量与版本'},{href:'/data/operations',label:'采集任务与日志'},{href:'/supplier',label:'供应商行情'},{href:'/supplier/pool',label:'供应商股票池'}];
+export function navigationSection(path:string){if(path==='/data'||path.startsWith('/data/')||path==='/supplier'||path.startsWith('/supplier/'))return 'data';if(stockNavigation.some(x=>x.href===path))return 'stock';return path==='/indicator-lab'?'lab':path==='/'?'market':null}

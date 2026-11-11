@@ -1,5 +1,6 @@
 'use client';
 import {useEffect,useState} from 'react';
+import {useScopedUrl} from './StockScope';
 import dynamic from 'next/dynamic';
 const Chart=dynamic(()=>import('./Chart'),{ssr:false});
 type Row=Record<string,any>;
@@ -12,7 +13,7 @@ function value(k:string,v:number|null){if(v==null)return '—';if(k==='first_sea
 export function AnnualStudy({scope='all'}:{scope?:string}){
  const [mode,setMode]=useState('exploratory'),[year,setYear]=useState(''),[month,setMonth]=useState(''),[board,setBoard]=useState(''),[regime,setRegime]=useState(''),[feature,setFeature]=useState('circulating_market_cap');
  const [result,setResult]=useState<Row|null>(null),[error,setError]=useState('');
- const p=new URLSearchParams({mode,scope});if(year){p.set('start_year',year);p.set('end_year',year)}if(month)p.set('month',month);if(board)p.set('board',board);if(regime)p.set('regime',regime);const query=p.toString();
+ const p=new URLSearchParams({mode,scope});if(year){p.set('start_year',year);p.set('end_year',year)}if(month)p.set('month',month);if(board)p.set('board',board);if(regime)p.set('regime',regime);const query=useScopedUrl('?'+p.toString()).slice(1);
  useEffect(()=>{const c=new AbortController();setResult(null);setError('');fetch(API+'/api/research/dragons/study-v07?'+query,{signal:c.signal}).then(async r=>{const d=await r.json();if(!r.ok)throw Error(d.detail||'研究快照加载失败');setResult(d)}).catch(e=>{if(e.name!=='AbortError')setError(e.message)});return()=>c.abort()},[query]);
  const d=result?.data,meta=result?.meta,annual:Row[]=(result?.years||[]).filter((r:Row)=>!year||r.year===Number(year)),comparisons:Row[]=d?.comparisons||[],selected=comparisons.find(c=>c.feature===feature);
  const factor=feature.includes('market_cap')||['amount','seal_amount'].includes(feature)?1e8:feature==='first_seal_seconds'?3600:1;

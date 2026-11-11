@@ -1,4 +1,10 @@
 'use client';
-import Link from 'next/link';import {usePathname} from 'next/navigation';
-const items=[['/','◫','历史涨停概览'],['/pool','▤','涨停股票池'],['/stock','⌁','个股研究'],['/dragons','龍','龙头研究中心'],['/seasonality','▦','季节性研究'],['/data','▥','数据资产']];
-export default function Nav(){const path=usePathname();return <nav>{items.map(([href,icon,label])=><Link className={(path===href||(href==='/data'&&path.startsWith('/data/')))?'active':''} href={href} key={href}><span>{icon}</span>{label}{(path===href||(href==='/data'&&path.startsWith('/data/')))&&<i/>}</Link>)}</nav>}
+import Link from 'next/link';
+import {usePathname} from 'next/navigation';
+import {primaryNavigation,stockNavigation,dataNavigation,navigationSection} from '../lib/navigation';
+export default function Nav(){
+ const path=usePathname(),section=navigationSection(path);
+ return <div className="workbench-navigation"><nav className="primary-navigation" aria-label="主导航">{primaryNavigation.map((item,index)=>{const active=section===['market','lab','stock'][index];return <Link key={item.href} href={item.href} className={active?'active':''} aria-current={active?(item.href===path?'page':'true'):undefined}><span>{item.icon}</span>{item.label}{active&&<i/>}</Link>})}</nav>
+ {section==='stock'&&<nav className="secondary-navigation" aria-label="股票研究子导航">{stockNavigation.map(item=><Link key={item.href} href={item.href} className={item.href===path?'active':''} aria-current={item.href===path?'page':undefined}>{item.label}</Link>)}</nav>}
+ <details className="data-navigation" key={section==='data'?'data':'research'} open={section==='data'}><summary>数据管理</summary><nav className="secondary-navigation" aria-label="数据管理子导航">{dataNavigation.map(item=><Link key={item.href} href={item.href} className={item.href===path?'active':''} aria-current={item.href===path?'page':undefined}>{item.label}</Link>)}</nav></details></div>
+}

@@ -42,3 +42,14 @@ The repository publishes software, methods and aggregate research conclusions. S
 - [This release's checks](release_validation.md)
 
 Chinese historical reports are retained to preserve methodological context. Public copies generalize personal filesystem paths and omit stock-level evidence tables. `local-only artifact` references identify reproducibility outputs available only to an operator with the authorized local inputs. Do not interpret missing private artifacts as an invitation to fetch or redistribute licensed data.
+
+## Current research workspace
+
+- [Indicator Lab implementation and acceptance](indicator_lab_acceptance.md)
+- [Navigation inventory and page decisions](frontend_information_architecture.md)
+- [Market signal metric contract and historical audits](market_signal_metric_contract.md)
+- [Data Inventory audit](data_inventory_iv0_audit.md)
+- [NQ historical-data feasibility](nq_0925_data_feasibility.md)
+- [Workspace release validation](workspace_release_validation.md)
+
+Evidence paths under `data/` in these reports are local-only artifacts, not public downloads.

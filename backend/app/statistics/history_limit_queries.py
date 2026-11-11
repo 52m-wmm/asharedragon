@@ -1,7 +1,7 @@
 from pathlib import Path
 from contextlib import contextmanager
 from datetime import timedelta
-import json
+import json,os,hashlib
 import duckdb
 from app.research.unified import UnifiedResearch
 
@@ -11,23 +11,29 @@ def rows(db,sql,args=None):
  c=db.execute(sql,args or []);return [dict(zip([x[0] for x in c.description],r)) for r in c.fetchall()]
 
 @contextmanager
-def dataset():
- manifest=json.loads((ROOT/'manifest.json').read_text());path=(ROOT/manifest['dataset']).resolve()
+def dataset(snapshot_dataset=None):
+ manifest=json.loads((ROOT/'manifest.json').read_text());selected=snapshot_dataset or os.environ.get('ASHARE_HISTORY_DATASET') or manifest['dataset'];path=(ROOT/selected).resolve()
  if not path.is_relative_to(ROOT):raise ValueError('Invalid statistics snapshot')
  db=duckdb.connect(config={'threads':2,'memory_limit':'512MB'})
  for name in ('positives','cycles','daily','days'):db.read_parquet(str(path/(name+'.parquet'))).create_view(name)
  meta=json.loads((path/'summary.json').read_text())
+ meta['snapshot']=str(path)
  meta['availability']={
   'daily_through':db.execute('SELECT max(trade_date) FROM daily WHERE daily_rows>0').fetchall()[0][0],
   'confirmed_through':db.execute("SELECT max(trade_date) FROM positives WHERE status='confirmed'").fetchall()[0][0],
  }
- classification_manifest=ROOT/'classification_manifest.json'
+ classification_manifest=Path(os.environ.get('ASHARE_CLASSIFICATION_MANIFEST',str(ROOT/'classification_manifest.json')))
  if classification_manifest.exists():
   cm=json.loads(classification_manifest.read_text())
   cp=(ROOT/cm['dataset']).resolve()
-  if cm['source_dataset']==manifest['dataset'] and cp.is_relative_to(ROOT):
+  if cm['source_dataset']==selected and cp.is_relative_to(ROOT):
+   for name,expected in cm.get('files',{}).items():
+    file=(cp/name).resolve()
+    if not file.is_relative_to(cp) or hashlib.sha256(file.read_bytes()).hexdigest()!=expected:raise ValueError('Classification checksum mismatch')
    db.read_parquet(str(cp/'classifications.parquet')).create_view('cycle_classes')
    meta['classification']=json.loads((cp/'summary.json').read_text())
+   if meta['classification']['source_snapshot']!=str(path) or meta['classification']['unified_snapshot']!=meta['source_snapshot']:raise ValueError('Classification parent mismatch')
+   meta['classification_snapshot']=str(cp)
  if 'classification' not in meta:
   db.execute("CREATE VIEW cycle_classes AS SELECT stock_code,run_start,'unknown' ipo_origin,false turnover_candidate,'unknown' ohlc_shape,'unknown' cycle_identity_quality,NULL::DATE listing_date FROM cycles")
  try:yield db,meta
@@ -58,12 +64,19 @@ def intraday_counts(db,day,mode):
  result=intraday_series(db,day,day,mode)
  return {k:result[0][k] if result else None for k in ('touched','broken','down')}
 
-def query(year=2026,month=None,trade_date=None,mode='all',height=1,view='daily',page=1,page_size=30,classification='all'):
- with dataset() as (db,meta):
+def query(year=2026,month=None,trade_date=None,mode='all',height=1,view='daily',page=1,page_size=30,classification='all',snapshot_dataset=None,exclude_st=False,exclude_ipo=False):
+ with dataset(snapshot_dataset) as (db,meta):
+  from app.statistics.stock_scope import apply_to_dataset,progression
+  original_days_sql=db.execute("SELECT sql FROM duckdb_views() WHERE view_name='days'").fetchall()[0][0]
+  db.execute('CREATE TEMP VIEW original_progress_days AS '+original_days_sql.split(' AS ',1)[1])
+  apply_to_dataset(db,meta,exclude_st,exclude_ipo,mode,cycle_scope=view=='cycles')
   conditions=['year(trade_date)=?'];params=[year]
   if month:conditions.append('month(trade_date)=?');params.append(month)
   daily=rows(db,'SELECT * FROM daily WHERE '+' AND '.join(conditions)+' ORDER BY trade_date',params)
   db.read_parquet(str(Path(meta['source_snapshot'])/'events.parquet')).create_view('source_events')
+  if exclude_st or exclude_ipo:
+   db.read_parquet(str(Path(meta['source_snapshot'])/'events.parquet')).create_view('unfiltered_events')
+   db.execute('CREATE OR REPLACE TEMP VIEW source_events AS SELECT e.* FROM unfiltered_events e JOIN eligible_members m USING(stock_code,trade_date) WHERE m.eligible')
   signals={r['trade_date']:r for r in intraday_series(db,daily[0]['trade_date'],daily[-1]['trade_date'],mode)} if daily else {}
   for item in daily:
    item.update({k:signals.get(item['trade_date'],{}).get(k) for k in ('touched','broken','down')})
@@ -100,12 +113,13 @@ def query(year=2026,month=None,trade_date=None,mode='all',height=1,view='daily',
    touch_where="trade_date=? AND daily_shape='touch_unsealed'"+(" AND status='confirmed'" if mode=='confirmed' else '')
    touch_total=db.execute('SELECT count(*) FROM days WHERE '+touch_where,[chosen]).fetchone()[0]
    touch_samples=rows(db,'SELECT stock_code,stock_name,trade_date,st_status,status,high,close FROM days WHERE '+touch_where+' ORDER BY stock_code LIMIT 100',[chosen])
-  return dict(intraday=intraday,touch_samples=touch_samples,touch_total=touch_total,daily=daily,samples=listing,total=total,page=page,page_size=page_size,selected_date=chosen,
+  return dict(ladder=rows(db,'SELECT '+('confirmed_height' if mode=='confirmed' else 'height')+" height,count(*) n FROM positives WHERE trade_date=?"+(" AND status='confirmed'" if mode=='confirmed' else '')+' GROUP BY 1 ORDER BY 1',[chosen]) if chosen else [],promotions=progression(db,chosen,mode),stock_scope=meta['stock_scope'],intraday=intraday,touch_samples=touch_samples,touch_total=touch_total,daily=daily,samples=listing,total=total,page=page,page_size=page_size,selected_date=chosen,
       yearly=meta['years'],meta={k:v for k,v in meta.items() if k not in ('years','cases','benchmark_exceptions')},mode=mode,view=view,classification=classification)
 
 
 def candles(code,day):
- with UnifiedResearch() as r:
+ with dataset() as (_,meta):source=Path(meta['source_snapshot'])
+ with UnifiedResearch(dataset=str(source.relative_to(ROOT.parent.parent/'research/unified'))) as r:
   data=rows(r.db,"""SELECT stock_code,trade_date,open,high,low,close,volume,amount FROM stock_daily
     WHERE stock_code=? AND trade_date BETWEEN ? AND ? AND price_quality='verified' ORDER BY trade_date""",[code,day-timedelta(days=65),day+timedelta(days=35)])
- return dict(data=data,meta=dict(stock_code=code,event_date=day,adjustment='none',warning='既有未复权日线；缺失交易日不补零'))
+ return dict(data=data,meta=dict(stock_code=code,event_date=day,source_snapshot=str(source),adjustment='none',warning='既有未复权日线；缺失交易日不补零'))
