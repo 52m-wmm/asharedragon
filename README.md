@@ -4,9 +4,9 @@ A local-first **A-share historical indicator and trading-research workspace**. B
 
 **Confirmed events and rule-reconstructed candidates are different evidence classes. Seasonality has not been rigorously established. This project does not execute trades or guarantee returns.**
 
-![AShareDragon historical limit-up homepage](docs/screenshots/homepage.png)
+![AShareDragon Indicator Lab with smooth historical indicator curves](docs/screenshots/homepage.png)
 
-*Current, real Market Overview with the three-section navigation and aggregate historical metrics. Candidate, supplier-diagnostic and unknown values remain labelled. This screenshot contains no stock-level price records, raw responses or credentials; the underlying market datasets are not distributed.*
+*Indicator Lab showing four aggregate historical series: limit-up stocks, first boards, second boards, and third boards or higher. The 90-day view is zoomed into a shorter interval. Smooth curves affect display only; underlying daily values and evidence classifications remain unchanged. This user-provided screenshot contains no stock-level price records, raw responses or credentials.*
 
 ## What is implemented
 
